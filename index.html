@@ -122,6 +122,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* Live indicator */
 .live-badge{display:inline-flex;align-items:center;gap:5px;background:#DCFCE7;color:#166534;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;}
 .live-badge .dot{width:6px;height:6px;background:#16A34A;}
+.block-item{padding:10px 12px;border:0.5px solid #E5E7EB;border-radius:8px;margin-bottom:6px;cursor:grab;background:#F9FAFB;transition:border-color .1s;}
+.block-item:hover{border-color:#16A34A;background:#F0FDF4;}
+.block-item:active{cursor:grabbing;}
+.email-block{border:1px solid transparent;border-radius:6px;margin-bottom:8px;padding:10px 12px;position:relative;cursor:pointer;transition:border-color .1s;}
+.email-block:hover{border-color:#16A34A;}
+.email-block:hover .block-controls{display:flex;}
+.block-controls{display:none;position:absolute;top:-12px;right:4px;gap:4px;z-index:5;}
+.bc-btn{background:#fff;border:0.5px solid #E5E7EB;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;color:#374151;}
+.bc-btn:hover{background:#F3F4F6;}
+.bc-del{color:#991B1B;border-color:#FECACA;}
 </style>
 </head>
 <body>
@@ -274,26 +284,84 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
     <!-- EMAILS -->
     <div id="page-emails" class="page">
-      <div class="compose" id="compose">
-        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Compose email</div>
-        <div class="fl"><label>Audience</label>
-          <select id="ea">
-            <option>All active clients</option>
-            <option>Lapsed 21+ days (win-back)</option>
-            <option>New clients this month</option>
-            <option>Membership expiring soon</option>
-            <option>ClassPass bookings only</option>
-            <option>Intro Lagree clients</option>
-          </select>
-        </div>
-        <div class="fl"><label>Subject</label><input placeholder="e.g. We miss you at Palm!" id="esubj"/></div>
-        <div class="fl"><label>Message</label><textarea placeholder="Your message..." id="ebody"></textarea></div>
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <button class="btn btn-g">Send now</button>
-          <button class="btn">Schedule</button>
+      <!-- Tabs -->
+      <div style="display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid #E5E7EB;">
+        <button class="etab active" onclick="emailTab('compose',this)" style="padding:7px 16px;font-size:13px;font-weight:500;background:none;border:none;border-bottom:2px solid #16A34A;color:#16A34A;cursor:pointer;margin-bottom:-1px;">Compose</button>
+        <button class="etab" onclick="emailTab('automations',this)" style="padding:7px 16px;font-size:13px;font-weight:500;background:none;border:none;border-bottom:2px solid transparent;color:#6B7280;cursor:pointer;margin-bottom:-1px;">Automations</button>
+        <button class="etab" onclick="emailTab('history',this)" style="padding:7px 16px;font-size:13px;font-weight:500;background:none;border:none;border-bottom:2px solid transparent;color:#6B7280;cursor:pointer;margin-bottom:-1px;">History</button>
+      </div>
+
+      <!-- Compose tab -->
+      <div id="etab-compose">
+        <div class="card" style="margin-bottom:14px;">
+          <div class="fl"><label>Audience</label>
+            <select id="ea">
+              <option value="all">All active clients</option>
+              <option value="lapsed">Lapsed 21+ days (win-back)</option>
+              <option value="new">New clients this month</option>
+              <option value="expiring">Membership expiring soon</option>
+              <option value="classpass">ClassPass bookings only</option>
+              <option value="intro">Intro Lagree clients</option>
+            </select>
+          </div>
+          <div class="fl"><label>Subject</label><input placeholder="e.g. We miss you at Palm!" id="esubj"/></div>
+          <div class="fl"><label>Message</label><textarea placeholder="Your message..." id="ebody" style="min-height:120px;"></textarea></div>
+          <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
+            <button class="btn btn-g" onclick="sendManualEmail()">Send now</button>
+            <button class="btn">Schedule</button>
+            <div id="send-status" style="font-size:12px;color:#16A34A;"></div>
+          </div>
         </div>
       </div>
-      <div id="email-list"></div>
+
+      <!-- Automations tab -->
+      <div id="etab-automations" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div style="font-size:13px;color:#6B7280;">4 automations active · fires automatically via MindBody webhooks</div>
+          <button class="btn btn-g" onclick="showNewAutomation()" style="font-size:12px;">+ New automation</button>
+        </div>
+
+        <div id="automation-list"></div>
+
+        <!-- New automation form -->
+        <div id="new-automation-form" style="display:none;" class="card">
+          <div style="font-size:14px;font-weight:600;margin-bottom:14px;">New automation</div>
+          <div class="fl"><label>Trigger</label>
+            <select id="auto-trigger">
+              <option value="client.created">New client creates account</option>
+              <option value="intro_complete">Client uses last intro class (3/3)</option>
+              <option value="last_credit">Client uses last credit on any pack</option>
+              <option value="second_10pack">Client buys 2nd 10-class pack</option>
+              <option value="membership_lapsed">Membership payment fails / lapses</option>
+              <option value="no_visit_7">No visit in 7 days</option>
+              <option value="no_visit_14">No visit in 14 days</option>
+              <option value="no_visit_21">No visit in 21 days</option>
+              <option value="birthday">Client birthday</option>
+              <option value="first_visit">After first ever class</option>
+            </select>
+          </div>
+          <div class="fl"><label>Subject</label><input id="auto-subject" placeholder="e.g. Welcome to Palm!"/></div>
+          <div class="fl"><label>Message</label><textarea id="auto-body" placeholder="Write your email..." style="min-height:100px;"></textarea></div>
+          <div class="fl"><label>Delay</label>
+            <select id="auto-delay">
+              <option value="0">Send immediately</option>
+              <option value="1">1 hour after trigger</option>
+              <option value="24">1 day after trigger</option>
+              <option value="48">2 days after trigger</option>
+              <option value="72">3 days after trigger</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <button class="btn btn-g" onclick="saveAutomation()">Save automation</button>
+            <button class="btn" onclick="hideNewAutomation()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- History tab -->
+      <div id="etab-history" style="display:none;">
+        <div id="email-list"></div>
+      </div>
     </div>
 
   </div>
@@ -654,7 +722,331 @@ function setupWebhooksPage() {
 }
 
 // ─── Emails page ──────────────────────────────────────────────────────────────
-function loadEmails() {
+// ─── Automations data ────────────────────────────────────────────────────────
+let automations = JSON.parse(localStorage.getItem('palm_automations') || 'null') || [
+  { id:'1', trigger:'client.created', triggerLabel:'New client creates account', subject:'Welcome to Palm Sporting Club!', body:'Hi [Name], welcome to Palm Sporting Club! We\'re thrilled to have you join our Lagree community in Marbella. Get started with our intro pack — 3 classes at a special price. Book now at palmsportingclub.com', delay:'0', active:true, sent:0 },
+  { id:'2', trigger:'intro_complete', triggerLabel:'Client uses last intro class (3/3)', subject:'You crushed your intro pack — here\'s what\'s next!', body:'Hi [Name], you just completed your 3-class intro pack — amazing work! Ready to keep going? Use code PALM10 for 10% off a 5 or 10-class pack. Valid for 7 days.', delay:'0', active:true, sent:0 },
+  { id:'3', trigger:'last_credit', triggerLabel:'Client uses last credit on any pack', subject:'That was your last credit — top up now!', body:'Hi [Name], you just used your last class credit. Don\'t lose your momentum — grab a new 5 or 10-class pack now and keep going!', delay:'0', active:true, sent:0 },
+  { id:'4', trigger:'second_10pack', triggerLabel:'Client buys 2nd 10-class pack', subject:'You keep coming back — have you considered a membership?', body:'Hi [Name], you\'ve now bought two 10-class packs — you\'re clearly hooked on Lagree! Our monthly membership saves you money and guarantees your spot every week.', delay:'0', active:true, sent:0 },
+];
+
+function saveAutomations() { localStorage.setItem('palm_automations', JSON.stringify(automations)); }
+
+function emailTab(tab, btn) {
+  document.querySelectorAll('.etab').forEach(b => { b.style.borderBottomColor='transparent'; b.style.color='#6B7280'; });
+  btn.style.borderBottomColor = '#16A34A'; btn.style.color = '#16A34A';
+  ['compose','automations','history'].forEach(t => { const el=$('etab-'+t); if(el) el.style.display = t===tab?'block':'none'; });
+  if (tab==='automations') renderAutomations();
+  if (tab==='history') loadEmailHistory();
+}
+
+function renderAutomations() {
+  const triggerColors = { 'client.created':'#DCFCE7', 'intro_complete':'#FEF3C7', 'last_credit':'#FEE2E2', 'second_10pack':'#DBEAFE', 'membership_lapsed':'#FEE2E2', 'no_visit_7':'#FEF3C7', 'no_visit_14':'#FEF3C7', 'no_visit_21':'#FAEEDA', 'birthday':'#EDE9FE', 'first_visit':'#DCFCE7' };
+  $('automation-list').innerHTML = automations.map((a,i) => `
+    <div class="card" style="margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;gap:12px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:${triggerColors[a.trigger]||'#F3F4F6'};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">⚡</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+            <div style="font-size:13px;font-weight:600;">${a.subject}</div>
+            <span class="badge ${a.active?'b-g':'b-a'}">${a.active?'Active':'Paused'}</span>
+          </div>
+          <div style="font-size:11px;color:#6B7280;margin-bottom:4px;">Trigger: ${a.triggerLabel}</div>
+          <div style="font-size:12px;color:#374151;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.body}</div>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:4px;">${a.sent} emails sent · ${a.delay==='0'?'Sends immediately':'Sends '+a.delay+'h after trigger'}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="toggleAutomation(${i})">${a.active?'Pause':'Resume'}</button>
+          <button class="btn" style="font-size:11px;padding:4px 10px;color:#991B1B;border-color:#FECACA;" onclick="deleteAutomation(${i})">Delete</button>
+        </div>
+      </div>
+    </div>`).join('') || '<div style="font-size:13px;color:#6B7280;padding:20px;text-align:center;">No automations yet — click + New automation to create one.</div>';
+}
+
+function toggleAutomation(i) { automations[i].active = !automations[i].active; saveAutomations(); renderAutomations(); }
+function deleteAutomation(i) { if(confirm('Delete this automation?')) { automations.splice(i,1); saveAutomations(); renderAutomations(); } }
+function showNewAutomation() { $('new-automation-form').style.display='block'; }
+function hideNewAutomation() { $('new-automation-form').style.display='none'; }
+
+function saveAutomation() {
+  const triggerLabels = { 'client.created':'New client creates account','intro_complete':'Client uses last intro class (3/3)','last_credit':'Client uses last credit on any pack','second_10pack':'Client buys 2nd 10-class pack','membership_lapsed':'Membership payment fails / lapses','no_visit_7':'No visit in 7 days','no_visit_14':'No visit in 14 days','no_visit_21':'No visit in 21 days','birthday':'Client birthday','first_visit':'After first ever class' };
+  const trigger = $('auto-trigger').value;
+  const subject = $('auto-subject').value.trim();
+  const body = $('auto-body').value.trim();
+  const delay = $('auto-delay').value;
+  if (!subject || !body) { alert('Please fill in subject and message'); return; }
+  automations.push({ id: Date.now().toString(), trigger, triggerLabel: triggerLabels[trigger], subject, body, delay, active:true, sent:0 });
+  saveAutomations();
+  hideNewAutomation();
+  $('auto-subject').value=''; $('auto-body').value='';
+  renderAutomations();
+}
+
+async function sendManualEmail() {
+  const audience = $('ea').value;
+  const subject = $('esubj').value.trim();
+  const body = $('ebody').value.trim();
+  const status = $('send-status');
+  if (!subject || !body) { status.textContent = 'Please fill in subject and message'; status.style.color='#991B1B'; return; }
+  status.textContent = 'Sending...'; status.style.color='#6B7280';
+  try {
+    const res = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-session-token': token },
+      body: JSON.stringify({ audience, subject, body })
+    });
+    const d = await res.json();
+    if (d.ok) { status.textContent = `Sent to ${d.count} clients`; status.style.color='#16A34A'; $('esubj').value=''; $('ebody').value=''; }
+    else { status.textContent = d.error || 'Send failed'; status.style.color='#991B1B'; }
+  } catch(e) { status.textContent = 'Error: '+e.message; status.style.color='#991B1B'; }
+}
+
+// ─── Email editor state ──────────────────────────────────────────────────────
+let editingAutoId = null;
+let emailBlocks = [];
+let dragType = null;
+let focusedBlock = null;
+
+const BLOCK_DEFAULTS = {
+  text: { type:'text', content:'Write your message here. Click to edit.' },
+  heading: { type:'heading', content:'Your heading here' },
+  button: { type:'button', label:'Book your class →', url:'https://www.palmsportingclub.com/reservations' },
+  discount: { type:'discount', code:'PALM10', desc:'10% off a 5 or 10-class pack · Valid 7 days' },
+  image: { type:'image', url:'', alt:'Image' },
+  divider: { type:'divider' },
+  list: { type:'list', items:['Benefit one','Benefit two','Benefit three'] },
+  twobuttons: { type:'twobuttons', label1:'5-class pack →', url1:'https://www.palmsportingclub.com/prices', label2:'10-class pack →', url2:'https://www.palmsportingclub.com/prices' },
+};
+
+const AUTOMATIONS_DATA = [
+  { id:'1', trigger:'client.created', triggerLabel:'New client joins', subject:'Welcome to Palm Sporting Club!', active:true, sent:0, delay:'Immediately', color:'#DCFCE7', icon:'👋' },
+  { id:'2', trigger:'intro_complete', triggerLabel:'Intro pack complete (3/3)', subject:'You smashed your intro pack — what's next?', active:true, sent:3, delay:'Immediately', color:'#FEF3C7', icon:'⭐' },
+  { id:'3', trigger:'last_credit', triggerLabel:'Last credit used', subject:'Don't stop now — top up your classes!', active:true, sent:7, delay:'Immediately', color:'#FEE2E2', icon:'⚡' },
+  { id:'4', trigger:'second_10pack', triggerLabel:'2nd 10-class pack bought', subject:'It's time to talk membership', active:true, sent:2, delay:'Immediately', color:'#DBEAFE', icon:'🔁' },
+  { id:'5', trigger:'no_visit_21', triggerLabel:'No visit in 21 days', subject:'We miss you — here's 10% off', active:false, sent:0, delay:'21 days of no visit', color:'#FEF3C7', icon:'⏰' },
+  { id:'6', trigger:'birthday', triggerLabel:'Client birthday', subject:'Happy birthday! A gift from PSC', active:false, sent:0, delay:'On birthday', color:'#EDE9FE', icon:'🎂' },
+  { id:'7', trigger:'first_visit', triggerLabel:'After first class', subject:'You did it! Here's what's next', active:false, sent:0, delay:'1 hour after', color:'#DCFCE7', icon:'🏆' },
+];
+
+let allAutomations = JSON.parse(localStorage.getItem('psc_automations') || JSON.stringify(AUTOMATIONS_DATA));
+
+function saveAllAutomations() { localStorage.setItem('psc_automations', JSON.stringify(allAutomations)); }
+
+function renderAutomationList() {
+  $('automation-list').innerHTML = allAutomations.map(a => `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:0.5px solid #E5E7EB;border-radius:10px;margin-bottom:8px;background:#fff;">
+      <div style="width:36px;height:36px;border-radius:8px;background:${a.color};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">${a.icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;">${a.subject} <span class="badge ${a.active?'b-g':'b-a'}">${a.active?'Active':'Paused'}</span></div>
+        <div style="font-size:11px;color:#6B7280;margin-top:2px;">Trigger: ${a.triggerLabel} · ${a.delay} · ${a.sent} sent</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openEditor('${a.id}')">Edit</button>
+        <button onclick="toggleAuto('${a.id}')" style="width:36px;height:20px;border-radius:10px;border:none;cursor:pointer;position:relative;background:${a.active?'#16A34A':'#D1D5DB'};flex-shrink:0;">
+          <span style="position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;${a.active?'right:2px':'left:2px'};transition:all .2s;"></span>
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+function toggleAuto(id) {
+  const a = allAutomations.find(x=>x.id===id);
+  if (a) { a.active = !a.active; saveAllAutomations(); renderAutomationList(); }
+}
+
+function openEditor(id) {
+  editingAutoId = id;
+  emailBlocks = [];
+  const overlay = $('email-editor-overlay');
+  overlay.style.display = 'block';
+  document.body.style.overflow = 'hidden';
+
+  if (id) {
+    const a = allAutomations.find(x=>x.id===id);
+    if (a) {
+      $('ed-trigger').value = a.trigger || 'client.created';
+      $('ed-subject').value = a.subject || '';
+      $('editor-title').textContent = 'Edit: ' + a.subject;
+      emailBlocks = a.blocks ? JSON.parse(JSON.stringify(a.blocks)) : getDefaultBlocks(a.trigger);
+    }
+  } else {
+    $('ed-trigger').value = 'client.created';
+    $('ed-subject').value = '';
+    $('editor-title').textContent = 'New automation';
+    emailBlocks = getDefaultBlocks('client.created');
+  }
+  renderCanvas();
+}
+
+function getDefaultBlocks(trigger) {
+  const defaults = {
+    'client.created': [
+      {type:'heading',content:'Welcome to Palm Sporting Club!'},
+      {type:'text',content:"We're so excited to have you join our community in Marbella. You're about to discover why Lagree on the Megaformer has become the most talked-about workout in the world."},
+      {type:'discount',code:'INTRO',desc:'3-Class Intro Pack — your first step on the Megaformer'},
+      {type:'button',label:'Get your intro pack →',url:'https://www.palmsportingclub.com/prices'},
+    ],
+    'intro_complete': [
+      {type:'heading',content:'Well done, [First name]!'},
+      {type:'text',content:"You've just completed all 3 classes in your intro pack. The results with Lagree really start to show with consistency — don't stop now."},
+      {type:'discount',code:'PALM10',desc:'10% off a 5 or 10-class pack · Valid 7 days'},
+      {type:'button',label:'Choose your class pack →',url:'https://www.palmsportingclub.com/prices'},
+    ],
+    'last_credit': [
+      {type:'heading',content:"Don't stop now, [First name]!"},
+      {type:'text',content:"You just used your last class credit. Your body is building real strength right now — grab a new pack and keep that momentum going."},
+      {type:'twobuttons',label1:'5-class pack →',url1:'https://www.palmsportingclub.com/prices',label2:'10-class pack →',url2:'https://www.palmsportingclub.com/prices'},
+    ],
+    'second_10pack': [
+      {type:'heading',content:"You're a true regular, [First name]."},
+      {type:'text',content:"You've now purchased two 10-class packs. At this point, a monthly membership is simply the smarter choice. Pay less per class, never run out of credits."},
+      {type:'list',items:['Better value than buying packs','Unlimited or fixed classes per month','Priority booking — your spot is always safe','Cancel anytime']},
+      {type:'button',label:'Explore memberships →',url:'https://www.palmsportingclub.com/prices'},
+    ],
+    'birthday': [
+      {type:'heading',content:'Happy birthday, [First name]! 🎂'},
+      {type:'text',content:"From everyone at Palm Sporting Club — wishing you a wonderful day. Here's a small birthday treat from us."},
+      {type:'discount',code:'BDAY5',desc:'5% off any class pack · Valid for 14 days'},
+      {type:'button',label:'Treat yourself →',url:'https://www.palmsportingclub.com/prices'},
+    ],
+  };
+  return defaults[trigger] || [{type:'heading',content:'Your email heading'},{type:'text',content:'Write your message here.'}];
+}
+
+function closeEditor() {
+  $('email-editor-overlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function dragBlock(e) { dragType = e.currentTarget.dataset.type; }
+
+function dropBlock(e) {
+  e.preventDefault();
+  if (!dragType) return;
+  const block = JSON.parse(JSON.stringify(BLOCK_DEFAULTS[dragType]));
+  block.id = Date.now().toString();
+  emailBlocks.push(block);
+  dragType = null;
+  renderCanvas();
+}
+
+function renderCanvas() {
+  const area = $('blocks-area');
+  const hint = $('drop-hint');
+  if (emailBlocks.length === 0) {
+    area.innerHTML = '<div id="drop-hint" style="text-align:center;color:#9CA3AF;font-size:13px;padding:40px 0;">← Drag blocks here to build your email</div>';
+    return;
+  }
+  area.innerHTML = emailBlocks.map((b, i) => renderBlock(b, i)).join('');
+}
+
+function renderBlock(b, i) {
+  const controls = `<div class="block-controls">
+    ${i>0?`<button class="bc-btn" onclick="moveBlock(${i},-1)">↑</button>`:''}
+    ${i<emailBlocks.length-1?`<button class="bc-btn" onclick="moveBlock(${i},1)">↓</button>`:''}
+    <button class="bc-btn bc-del" onclick="deleteBlock(${i})">Delete</button>
+  </div>`;
+
+  switch(b.type) {
+    case 'heading': return `<div class="email-block" onclick="editBlock(${i})">${controls}<div style="font-size:20px;font-weight:700;color:#0D3D20;font-family:Georgia,serif;" contenteditable="true" onblur="saveBlockContent(${i},this.textContent)">${b.content}</div></div>`;
+    case 'text': return `<div class="email-block" onclick="editBlock(${i})">${controls}<div style="font-size:14px;line-height:1.8;color:#2C2C2A;font-family:Georgia,serif;" contenteditable="true" onblur="saveBlockContent(${i},this.innerHTML)">${b.content}</div></div>`;
+    case 'button': return `<div class="email-block">${controls}<div style="text-align:center;padding:6px 0;">
+      <span contenteditable="true" onblur="saveBlockBtn(${i},'label',this.textContent)" style="display:inline-block;background:#0D3D20;color:#fff;padding:13px 28px;border-radius:8px;font-weight:600;font-size:14px;cursor:text;">${b.label}</span>
+      <div style="margin-top:6px;"><input value="${b.url}" onchange="saveBlockBtn(${i},'url',this.value)" placeholder="Button URL" style="width:100%;font-size:11px;padding:4px 8px;border:0.5px solid #E5E7EB;border-radius:4px;"/></div>
+    </div></div>`;
+    case 'discount': return `<div class="email-block">${controls}<div style="background:#E8E5DC;border-radius:8px;padding:16px;text-align:center;">
+      <div contenteditable="true" onblur="saveBlockDiscount(${i},'code',this.textContent)" style="font-size:28px;font-weight:800;color:#0D3D20;letter-spacing:3px;cursor:text;">${b.code}</div>
+      <div contenteditable="true" onblur="saveBlockDiscount(${i},'desc',this.textContent)" style="font-size:12px;color:#4A4A4A;margin-top:6px;cursor:text;">${b.desc}</div>
+    </div></div>`;
+    case 'image': return `<div class="email-block">${controls}<div style="text-align:center;background:#F9FAFB;border-radius:8px;padding:12px;">
+      <input value="${b.url}" onchange="saveBlockImg(${i},this.value)" placeholder="Paste image URL here..." style="width:100%;font-size:12px;padding:6px 8px;border:0.5px solid #E5E7EB;border-radius:4px;margin-bottom:6px;"/>
+      ${b.url?`<img src="${b.url}" style="max-width:100%;border-radius:6px;"/>`:'<div style="color:#9CA3AF;font-size:12px;">Enter image URL above</div>'}
+    </div></div>`;
+    case 'divider': return `<div class="email-block">${controls}<hr style="border:none;border-top:1px solid #E8E5DC;margin:8px 0;"/></div>`;
+    case 'list': return `<div class="email-block" onclick="editBlock(${i})">${controls}<div style="background:#E8E5DC;border-radius:8px;padding:14px 16px;">
+      ${b.items.map((item,j)=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:#2C2C2A;"><span style="color:#0D3D20;font-weight:700;">✓</span><span contenteditable="true" onblur="saveListItem(${i},${j},this.textContent)">${item}</span></div>`).join('')}
+      <button onclick="addListItem(${i})" style="background:none;border:none;color:#0D3D20;font-size:12px;cursor:pointer;margin-top:4px;">+ Add item</button>
+    </div></div>`;
+    case 'twobuttons': return `<div class="email-block">${controls}<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><span contenteditable="true" onblur="saveTwoBtn(${i},'label1',this.textContent)" style="display:block;background:#0D3D20;color:#fff;padding:13px 8px;border-radius:8px;font-weight:600;font-size:13px;text-align:center;cursor:text;">${b.label1}</span><input value="${b.url1}" onchange="saveTwoBtn(${i},'url1',this.value)" style="width:100%;font-size:11px;padding:3px 6px;border:0.5px solid #E5E7EB;border-radius:4px;margin-top:4px;"/></div>
+      <div><span contenteditable="true" onblur="saveTwoBtn(${i},'label2',this.textContent)" style="display:block;background:#2C2C2A;color:#fff;padding:13px 8px;border-radius:8px;font-weight:600;font-size:13px;text-align:center;cursor:text;">${b.label2}</span><input value="${b.url2}" onchange="saveTwoBtn(${i},'url2',this.value)" style="width:100%;font-size:11px;padding:3px 6px;border:0.5px solid #E5E7EB;border-radius:4px;margin-top:4px;"/></div>
+    </div></div>`;
+    default: return '';
+  }
+}
+
+function saveBlockContent(i, val) { emailBlocks[i].content = val; }
+function saveBlockBtn(i, key, val) { emailBlocks[i][key] = val; }
+function saveBlockDiscount(i, key, val) { emailBlocks[i][key] = val; }
+function saveBlockImg(i, url) { emailBlocks[i].url = url; renderCanvas(); }
+function saveListItem(i, j, val) { emailBlocks[i].items[j] = val; }
+function saveTwoBtn(i, key, val) { emailBlocks[i][key] = val; }
+function addListItem(i) { emailBlocks[i].items.push('New benefit'); renderCanvas(); }
+function moveBlock(i, dir) { const b=emailBlocks.splice(i,1)[0]; emailBlocks.splice(i+dir,0,b); renderCanvas(); }
+function deleteBlock(i) { emailBlocks.splice(i,1); renderCanvas(); }
+function editBlock(i) { focusedBlock = i; }
+
+function insertPersonalisation(tag) {
+  const el = document.querySelector('.email-block div[contenteditable]:focus');
+  if (el) { document.execCommand('insertText', false, tag); }
+}
+
+function saveEmailEditor() {
+  const trigger = $('ed-trigger').value;
+  const subject = $('ed-subject').value.trim() || 'New automation';
+  const triggerLabels = {'client.created':'New client joins','intro_complete':'Intro pack complete (3/3)','last_credit':'Last credit used','second_10pack':'2nd 10-class pack bought','no_visit_21':'No visit in 21 days','no_visit_14':'No visit in 14 days','no_visit_7':'No visit in 7 days','birthday':'Client birthday','first_visit':'After first class','membership_lapsed':'Membership lapsed'};
+  const triggerIcons = {'client.created':'👋','intro_complete':'⭐','last_credit':'⚡','second_10pack':'🔁','no_visit_21':'⏰','no_visit_14':'⏰','no_visit_7':'⏰','birthday':'🎂','first_visit':'🏆','membership_lapsed':'⚠️'};
+  const triggerColors = {'client.created':'#DCFCE7','intro_complete':'#FEF3C7','last_credit':'#FEE2E2','second_10pack':'#DBEAFE','birthday':'#EDE9FE','first_visit':'#DCFCE7'};
+
+  if (editingAutoId) {
+    const a = allAutomations.find(x=>x.id===editingAutoId);
+    if (a) { a.trigger=trigger; a.triggerLabel=triggerLabels[trigger]||trigger; a.subject=subject; a.blocks=JSON.parse(JSON.stringify(emailBlocks)); a.icon=triggerIcons[trigger]||'✉'; a.color=triggerColors[trigger]||'#F3F4F6'; a.active=true; }
+  } else {
+    allAutomations.push({ id:Date.now().toString(), trigger, triggerLabel:triggerLabels[trigger]||trigger, subject, blocks:JSON.parse(JSON.stringify(emailBlocks)), active:true, sent:0, delay:$('ed-delay').value==='0'?'Immediately':$('ed-delay').value+' after', icon:triggerIcons[trigger]||'✉', color:triggerColors[trigger]||'#F3F4F6' });
+  }
+  saveAllAutomations();
+  closeEditor();
+  renderAutomationList();
+}
+
+function emailTab(tab, btn) {
+  document.querySelectorAll('.etab').forEach(b => { b.style.borderBottomColor='transparent'; b.style.color='#6B7280'; });
+  btn.style.borderBottomColor = '#16A34A'; btn.style.color = '#16A34A';
+  ['automations','compose','history'].forEach(t => { const el=$('etab-'+t); if(el) el.style.display = t===tab?'block':'none'; });
+  if (tab==='automations') renderAutomationList();
+  if (tab==='history') loadEmailHistory();
+}
+
+async function sendManualEmail() {
+  const audience = $('ea').value;
+  const subject = $('esubj').value.trim();
+  const body = $('ebody').value.trim();
+  const status = $('send-status');
+  if (!subject || !body) { status.textContent = 'Please fill in subject and message'; status.style.color='#991B1B'; return; }
+  status.textContent = 'Sending...'; status.style.color='#6B7280';
+  try {
+    const res = await fetch('/api/send-email', { method:'POST', headers:{'Content-Type':'application/json','x-session-token':token}, body:JSON.stringify({audience,subject,body}) });
+    const d = await res.json();
+    if (d.ok) { status.textContent=`Sent to ${d.count} clients ✓`; status.style.color='#16A34A'; $('esubj').value=''; $('ebody').value=''; }
+    else { status.textContent=d.error||'Send failed'; status.style.color='#991B1B'; }
+  } catch(e) { status.textContent='Error: '+e.message; status.style.color='#991B1B'; }
+}
+
+function loadEmails() { renderAutomationList(); }
+
+function loadEmailHistory() {
+  $('email-list').innerHTML = [
+    {sub:'We miss you at Palm Sporting Club!',meta:'To: lapsed (11) · Sent Mar 7 · Open 68% · Clicks 24%',badge:'b-g',bl:'Sent',color:'#DCFCE7',icon:'⏰'},
+    {sub:'New class: Saturday 9:00 AM!',meta:'To: all clients (142) · Sent Feb 28 · Open 74% · Clicks 31%',badge:'b-g',bl:'Sent',color:'#DBEAFE',icon:'📢'},
+    {sub:'Your membership renews in 5 days',meta:'To: expiring (7) · Scheduled Mar 17 · 9:00 AM',badge:'b-a',bl:'Scheduled',color:'#FEF3C7',icon:'⏰'},
+    {sub:'Welcome to Palm Sporting Club!',meta:'Auto-trigger · Last sent Mar 12 · Open 89%',badge:'b-g',bl:'Active',color:'#DCFCE7',icon:'👋'},
+  ].map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;margin-bottom:6px;border:1px solid #E5E7EB;background:#fff;">
+    <div style="width:34px;height:34px;border-radius:8px;background:${e.color};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">${e.icon}</div>
+    <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:500;">${e.sub} <span class="badge ${e.badge}">${e.bl}</span></div><div style="font-size:11px;color:#6B7280;margin-top:2px;">${e.meta}</div></div>
+  </div>`).join('');
+}
+
+function loadEmailHistory() {
   $('email-list').innerHTML = [
     {bg:'#DCFCE7',sub:'We miss you at Palm Sporting Club!',pre:'Hi [Name], it\'s been a while since we\'ve seen you on the Megaformer…',meta:'To: lapsed (11) · Sent Mar 7 · Open 68%',bl:'Sent',bc:'b-g'},
     {bg:'#FEF3C7',sub:'Your membership renews in 5 days',pre:'Your membership is coming up for renewal — renew now to keep your spot…',meta:'To: expiring (7) · Scheduled Mar 17 · 9am',bl:'Scheduled',bc:'b-a'},

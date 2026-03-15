@@ -152,19 +152,34 @@ async function sendEmail({ to, toName, subject, html }) {
 
 // ─── Email templates ──────────────────────────────────────────────────────────
 function emailWrapper(content) {
-  return `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F7F6F3;margin:0;padding:20px;">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:32px;border:1px solid #E5E7EB;">
-<div style="text-align:center;margin-bottom:24px;">
-  <div style="font-size:28px;margin-bottom:8px;">🌴</div>
-  <div style="font-weight:600;font-size:18px;color:#111827;">Palm Sporting Club</div>
-  <div style="font-size:13px;color:#6B7280;">Marbella</div>
+  return `<!DOCTYPE html><html><body style="font-family:Georgia,'Times New Roman',serif;background:#E8E5DC;margin:0;padding:30px 20px;">
+<div style="max-width:580px;margin:0 auto;">
+
+  <!-- Logo header -->
+  <div style="text-align:center;padding:32px 0 24px;">
+    <img src="https://images.squarespace-cdn.com/content/v1/65d13efed52d4e7d3ecca2ad/5001e330-ad2f-4883-809e-a6149e75c82b/Untitled+design+%282%29.png?format=400w" alt="Palm Sporting Club" style="width:140px;height:auto;" />
+  </div>
+
+  <!-- Email body -->
+  <div style="background:#fff;border-radius:12px;padding:36px 40px;border:1px solid #D6D3C8;">
+    ${content}
+
+    <!-- Sign off -->
+    <div style="margin-top:32px;padding-top:20px;border-top:1px solid #E8E5DC;font-size:14px;color:#4A4A4A;line-height:1.8;">
+      See you soon,<br>
+      <span style="font-weight:600;color:#0D3D20;">PSC Team</span>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="text-align:center;padding:20px 0;font-size:11px;color:#8C8A82;font-family:-apple-system,sans-serif;">
+    Palm Sporting Club · Oasis Business Center, Marbella<br>
+    <a href="https://www.palmsportingclub.com" style="color:#0D3D20;">palmsportingclub.com</a> &nbsp;·&nbsp;
+    <a href="https://wa.me/34687282994" style="color:#0D3D20;">WhatsApp</a> &nbsp;·&nbsp;
+    <a href="#" style="color:#8C8A82;">Unsubscribe</a>
+  </div>
 </div>
-${content}
-<div style="margin-top:28px;padding-top:20px;border-top:1px solid #F3F4F6;text-align:center;font-size:12px;color:#9CA3AF;">
-  Palm Sporting Club · Oasis Business Center, Marbella<br>
-  <a href="https://www.palmsportingclub.com" style="color:#16A34A;">palmsportingclub.com</a>
-</div>
-</div></body></html>`;
+</body></html>`;
 }
 
 const EMAIL_TEMPLATES = {
@@ -178,10 +193,10 @@ const EMAIL_TEMPLATES = {
       <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Ready to keep your momentum going? We'd love to have you back on the Megaformer.</p>
       <div style="background:#F0FDF4;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;border:1px solid #BBF7D0;">
         <div style="font-size:13px;color:#166534;margin-bottom:6px;font-weight:500;">YOUR EXCLUSIVE DISCOUNT</div>
-        <div style="font-size:32px;font-weight:700;color:#16A34A;letter-spacing:2px;">PALM10</div>
+        <div style="font-size:32px;font-weight:700;color:#0D3D20;letter-spacing:2px;">PALM10</div>
         <div style="font-size:13px;color:#166534;margin-top:6px;">10% off a 5 or 10-class pack · Valid 7 days</div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#16A34A;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Shop class packs →</a>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Shop class packs →</a>
       <p style="font-size:12px;color:#9CA3AF;text-align:center;">Use code PALM10 at checkout. One use per client.</p>
     `)
   }),
@@ -202,7 +217,7 @@ const EMAIL_TEMPLATES = {
           ✓ Cancel anytime
         </div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#2563EB;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">View membership options →</a>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">View membership options →</a>
       <p style="font-size:13px;color:#6B7280;text-align:center;">Questions? Reply to this email or WhatsApp us at +34 687 28 29 94</p>
     `)
   }),
@@ -215,10 +230,10 @@ const EMAIL_TEMPLATES = {
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You just used your last class credit — great work staying consistent!</p>
       <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Don't let your streak fade. Grab a new pack now and keep your body moving.</p>
       <div style="display:flex;gap:10px;margin-bottom:20px;">
-        <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#16A34A;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">5-class pack →</a>
+        <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">5-class pack →</a>
         <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#111827;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">10-class pack →</a>
       </div>
-      <p style="font-size:13px;color:#6B7280;text-align:center;">Book directly from the <a href="https://mndbdy.ly/e/5737970" style="color:#16A34A;">Palm app</a> too.</p>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Book directly from the <a href="https://mndbdy.ly/e/5737970" style="color:#0D3D20;">Palm app</a> too.</p>
     `)
   }),
 
@@ -230,10 +245,10 @@ const EMAIL_TEMPLATES = {
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">We're so excited to have you join the Palm Sporting Club community in Marbella. You're about to discover why Lagree has become the most talked-about workout in the world.</p>
       <div style="background:#F0FDF4;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;border:1px solid #BBF7D0;">
         <div style="font-size:13px;color:#166534;margin-bottom:6px;font-weight:500;">YOUR WELCOME OFFER</div>
-        <div style="font-size:22px;font-weight:700;color:#16A34A;margin-bottom:4px;">3-Class Intro Pack</div>
+        <div style="font-size:22px;font-weight:700;color:#0D3D20;margin-bottom:4px;">3-Class Intro Pack</div>
         <div style="font-size:13px;color:#166534;">The perfect way to try Lagree at a special intro price</div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#16A34A;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:16px;">Get your intro pack now →</a>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:16px;">Get your intro pack now →</a>
       <p style="color:#374151;line-height:1.7;margin-bottom:8px;font-size:13px;"><strong>What to expect:</strong></p>
       <p style="color:#6B7280;line-height:1.8;font-size:13px;margin-bottom:20px;">
         ✓ 50-minute full-body workout on the Megaformer<br>
@@ -241,7 +256,7 @@ const EMAIL_TEMPLATES = {
         ✓ Small classes, expert instructors<br>
         ✓ Located in Oasis Business Center, Marbella
       </p>
-      <p style="font-size:13px;color:#6B7280;text-align:center;">Any questions? WhatsApp us at <a href="https://wa.me/34687282994" style="color:#16A34A;">+34 687 28 29 94</a></p>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Any questions? WhatsApp us at <a href="https://wa.me/34687282994" style="color:#0D3D20;">+34 687 28 29 94</a></p>
     `)
   }),
 };
@@ -408,4 +423,50 @@ app.listen(CONFIG.port, () => {
   console.log(`🌴 Palm CRM running on port ${CONFIG.port}`);
   console.log(`   Auth: username=andrea password=Hello999`);
   console.log(`   Automations: 4 email triggers active`);
+});
+
+// ─── Manual email send endpoint ───────────────────────────────────────────────
+app.post('/api/send-email', requireAuth, async (req, res) => {
+  const { audience, subject, body } = req.body;
+  if (!subject || !body) return res.status(400).json({ error: 'Subject and body required' });
+
+  try {
+    const mbToken = await getMBToken();
+    const clientsRes = await fetch(`${MB_BASE}/client/clients?Limit=200`, {
+      headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+    });
+    const clientsData = await clientsRes.json();
+    let clients = clientsData.Clients || [];
+
+    // Filter by audience
+    if (audience === 'lapsed') {
+      const cutoff = Date.now() - 21 * 24 * 60 * 60 * 1000;
+      clients = clients.filter(c => c.LastModifiedDateTime && new Date(c.LastModifiedDateTime) < cutoff);
+    } else if (audience === 'new') {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      clients = clients.filter(c => c.CreationDate && new Date(c.CreationDate) > cutoff);
+    }
+
+    clients = clients.filter(c => c.Email && c.Active !== false);
+
+    if (clients.length === 0) return res.json({ ok: true, count: 0 });
+
+    // Send to each client
+    let sent = 0;
+    for (const client of clients.slice(0, 100)) {
+      const personalised = body.replace(/\[Name\]/g, client.FirstName || 'there');
+      const result = await sendEmail({
+        to: client.Email,
+        toName: `${client.FirstName||''} ${client.LastName||''}`.trim(),
+        subject,
+        html: emailWrapper(`<p style="color:#374151;line-height:1.8;font-size:15px;">${personalised.replace(/\n/g,'<br>')}</p>`)
+      });
+      if (result.ok) sent++;
+    }
+
+    res.json({ ok: true, count: sent });
+  } catch (err) {
+    console.error('[send-email]', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
