@@ -143,6 +143,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .editor-canvas{flex:1;overflow-y:auto;padding:24px;display:flex;justify-content:center;}
 .editor-email{width:580px;background:#E8E5DC;border-radius:12px;padding:24px;min-height:400px;}
 .editor-email-inner{background:#fff;border-radius:10px;padding:28px 32px;border:1px solid #D6D3C8;min-height:200px;}
+/* Date picker */
+.date-picker{display:flex;align-items:center;gap:8px;font-size:12px;}
+.date-picker input[type="date"]{padding:4px 8px;border:1px solid #D1D5DB;border-radius:6px;font-size:12px;color:#374151;background:#fff;}
+.date-picker button{padding:4px 10px;background:#D97706;color:#fff;border:none;border-radius:6px;font-size:11px;cursor:pointer;}
+/* YoY comparison */
+.yoy-card{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:14px;margin-bottom:14px;}
+.yoy-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #F3F4F6;}
+.yoy-row:last-child{border-bottom:none;}
+.yoy-label{font-size:12px;color:#6B7280;width:100px;}
+.yoy-current{font-size:14px;font-weight:600;flex:1;}
+.yoy-prev{font-size:13px;color:#9CA3AF;flex:1;}
+.yoy-change{font-size:12px;font-weight:600;width:80px;text-align:right;}
+.yoy-up{color:#16A34A;}.yoy-down{color:#DC2626;}.yoy-flat{color:#D97706;}
+/* Item analytics */
+.item-row{padding:10px 0;border-bottom:1px solid #F3F4F6;cursor:pointer;}
+.item-row:last-child{border-bottom:none;}
+.item-row:hover{background:#FAFAF8;}
+.item-header{display:flex;align-items:center;gap:10px;}
+.item-rank{width:24px;height:24px;border-radius:6px;background:#FEF3C7;color:#92400E;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.item-info{flex:1;min-width:0;}
+.item-name{font-size:13px;font-weight:600;color:#111827;}
+.item-meta{font-size:11px;color:#6B7280;margin-top:1px;}
+.item-stats{display:flex;gap:8px;align-items:center;}
+.item-stat{text-align:right;}
+.item-stat-v{font-size:14px;font-weight:600;}
+.item-stat-l{font-size:10px;color:#9CA3AF;}
+.item-expand{display:none;padding:10px 0 4px 34px;font-size:12px;}
+.item-expand.open{display:block;}
+.item-bar{height:4px;border-radius:2px;background:#F3F4F6;margin-top:4px;}
+.item-bar-fill{height:100%;border-radius:2px;}
+/* Heatmap */
+.heatmap{display:grid;grid-template-columns:40px repeat(24,1fr);gap:2px;font-size:10px;}
+.heatmap-cell{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
+.heatmap-label{display:flex;align-items:center;font-size:10px;color:#6B7280;}
+/* Master grid */
+.master-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;}
+.master-grid-2{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:14px;}
+.master-metric{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:14px;}
+.master-metric-l{font-size:11px;color:#6B7280;text-transform:uppercase;letter-spacing:.4px;}
+.master-metric-v{font-size:24px;font-weight:700;margin:4px 0;}
+.master-metric-d{font-size:11px;display:flex;align-items:center;gap:4px;}
+.rec-card{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:14px;margin-bottom:8px;transition:all .15s;}
+.rec-card:hover{border-color:#D97706;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+.rec-priority{display:inline-block;font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;}
+.rec-p-critical{background:#FEE2E2;color:#991B1B;}
+.rec-p-high{background:#FEF3C7;color:#92400E;}
+.rec-p-medium{background:#DBEAFE;color:#1E40AF;}
+.rec-p-low{background:#F0FDF4;color:#166534;}
 </style>
 </head>
 <body>
@@ -223,10 +271,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <!-- Time frame selector -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <div style="display:flex;gap:4px;">
-            <button class="btn tf-master" onclick="setMasterPeriod('7d',this)" id="master-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
-            <button class="btn tf-master" onclick="setMasterPeriod('30d',this)" id="master-30d" style="font-size:11px;padding:4px 12px;background:#0D3D20;color:#fff;border-color:#0D3D20;">30 days</button>
-            <button class="btn tf-master" onclick="setMasterPeriod('90d',this)" id="master-90d" style="font-size:11px;padding:4px 12px;">3 months</button>
-            <button class="btn tf-master" onclick="setMasterPeriod('ytd',this)" id="master-ytd" style="font-size:11px;padding:4px 12px;">Year to date</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('1d',this)" id="master-1d" style="font-size:11px;padding:4px 12px;">1D</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('1w',this)" id="master-1w" style="font-size:11px;padding:4px 12px;">1W</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('1m',this)" id="master-1m" style="font-size:11px;padding:4px 12px;background:#0D3D20;color:#fff;border-color:#0D3D20;">1M</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('3m',this)" id="master-3m" style="font-size:11px;padding:4px 12px;">3M</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('1y',this)" id="master-1y" style="font-size:11px;padding:4px 12px;">1Y</button>
           </div>
           <div style="font-size:11px;color:#6B7280;" id="master-updated"></div>
         </div>
@@ -271,6 +320,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#D97706;margin-right:4px;"></span>Kitchen</span>
           </div>
         </div>
+        <!-- YoY snapshot -->
+        <div class="yoy-card" id="master-yoy" style="display:none;">
+          <div class="card-t">Year-over-year snapshot</div>
+          <div id="master-yoy-content"></div>
+        </div>
         <!-- Business health -->
         <div class="g2">
           <div class="card">
@@ -281,6 +335,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <div class="card-t">Quick actions</div>
             <div id="master-actions"></div>
           </div>
+        </div>
+        <!-- Master Recommendations -->
+        <div class="card" style="margin-bottom:16px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Actionable recommendations
+            <span class="badge b-a" id="master-rec-count">0</span>
+          </div>
+          <div style="font-size:11px;color:#6B7280;margin-bottom:10px;">Data-driven actions to improve revenue</div>
+          <div id="master-recommendations"></div>
         </div>
       </div>
     </div>
@@ -311,10 +374,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <!-- Period selector -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <div style="display:flex;gap:4px;">
-            <button class="btn tf-an" onclick="setAnPeriod('7d',this)" id="an-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
-            <button class="btn tf-an" onclick="setAnPeriod('30d',this)" id="an-30d" style="font-size:11px;padding:4px 12px;background:#16A34A;color:#fff;border-color:#16A34A;">30 days</button>
-            <button class="btn tf-an" onclick="setAnPeriod('90d',this)" id="an-90d" style="font-size:11px;padding:4px 12px;">3 months</button>
-            <button class="btn tf-an" onclick="setAnPeriod('ytd',this)" id="an-ytd" style="font-size:11px;padding:4px 12px;">Year to date</button>
+            <button class="btn tf-an" onclick="setAnPeriod('1d',this)" id="an-1d" style="font-size:11px;padding:4px 12px;">1D</button>
+            <button class="btn tf-an" onclick="setAnPeriod('1w',this)" id="an-1w" style="font-size:11px;padding:4px 12px;">1W</button>
+            <button class="btn tf-an" onclick="setAnPeriod('1m',this)" id="an-1m" style="font-size:11px;padding:4px 12px;background:#16A34A;color:#fff;border-color:#16A34A;">1M</button>
+            <button class="btn tf-an" onclick="setAnPeriod('3m',this)" id="an-3m" style="font-size:11px;padding:4px 12px;">3M</button>
+            <button class="btn tf-an" onclick="setAnPeriod('1y',this)" id="an-1y" style="font-size:11px;padding:4px 12px;">1Y</button>
           </div>
           <div style="font-size:11px;color:#6B7280;" id="an-updated"></div>
         </div>
@@ -382,53 +446,85 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="kit-load" class="loading"><div class="spin"></div>Loading Palm Kitchen data...</div>
       <div id="kit-err" class="err-box" style="display:none;"></div>
       <div id="kit-body" style="display:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <div style="display:flex;gap:4px;">
-            <button class="btn tf-kit" onclick="setKitPeriod('7d',this)" id="kit-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
-            <button class="btn tf-kit" onclick="setKitPeriod('30d',this)" id="kit-30d" style="font-size:11px;padding:4px 12px;background:#D97706;color:#fff;border-color:#D97706;">30 days</button>
-            <button class="btn tf-kit" onclick="setKitPeriod('90d',this)" id="kit-90d" style="font-size:11px;padding:4px 12px;">3 months</button>
-            <button class="btn tf-kit" onclick="setKitPeriod('ytd',this)" id="kit-ytd" style="font-size:11px;padding:4px 12px;">Year to date</button>
+        <!-- Time Period Selector (Square-style) -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button class="btn tf-kit" onclick="setKitPeriod('1d',this)" id="kit-1d" style="font-size:11px;padding:4px 12px;background:#D97706;color:#fff;border-color:#D97706;">1D</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('1w',this)" id="kit-1w" style="font-size:11px;padding:4px 12px;">1W</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('1m',this)" id="kit-1m" style="font-size:11px;padding:4px 12px;">1M</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('3m',this)" id="kit-3m" style="font-size:11px;padding:4px 12px;">3M</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('1y',this)" id="kit-1y" style="font-size:11px;padding:4px 12px;">1Y</button>
+            <div class="date-picker" style="margin-left:12px;">
+              <input type="date" id="kit-start-date" />
+              <span>to</span>
+              <input type="date" id="kit-end-date" />
+              <button onclick="loadKitchenCustomRange()">Go</button>
+            </div>
           </div>
           <div style="font-size:11px;color:#6B7280;" id="kit-updated"></div>
         </div>
-        <!-- KPIs -->
-        <div class="an-grid" id="kit-kpis"></div>
-        <!-- Sales trend + forecast -->
+        <!-- Sales Summary (Square-style) -->
         <div class="card" style="margin-bottom:14px;">
           <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
-            Sales trend & forecast
+            Sales Summary
+            <span style="font-size:10px;color:#9CA3AF;font-weight:400;" id="kit-comp-label"></span>
+          </div>
+          <div id="kit-sales-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;"></div>
+        </div>
+        <!-- Hourly Sales Chart (current vs previous) -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Hourly Sales
+            <div style="display:flex;gap:12px;font-size:10px;font-weight:400;">
+              <span><span style="display:inline-block;width:12px;height:3px;background:#D97706;border-radius:2px;vertical-align:middle;margin-right:3px;"></span><span id="kit-cur-label">Current</span></span>
+              <span><span style="display:inline-block;width:12px;height:3px;background:#CBD5E1;border-radius:2px;vertical-align:middle;margin-right:3px;"></span><span id="kit-prev-label">Previous</span></span>
+            </div>
+          </div>
+          <div id="kit-hourly-chart" style="height:160px;"></div>
+          <div id="kit-hourly-labels" style="display:flex;justify-content:space-between;font-size:9px;color:#9CA3AF;margin-top:4px;"></div>
+        </div>
+        <!-- Payment Types & Customer Insights -->
+        <div class="g2">
+          <div class="card">
+            <div class="card-t">Sales by Payment Type</div>
+            <div id="kit-payment-types"></div>
+          </div>
+          <div class="card">
+            <div class="card-t">Customer Insights</div>
+            <div id="kit-customers"></div>
+          </div>
+        </div>
+        <!-- Top Categories (expandable) -->
+        <div class="card" style="margin-top:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Top Categories
+            <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Click to expand</span>
+          </div>
+          <div id="kit-categories"></div>
+        </div>
+        <!-- Top Items -->
+        <div class="card" style="margin-top:14px;">
+          <div class="card-t">Top Items</div>
+          <div id="kit-top-items"></div>
+        </div>
+        <!-- Sales Trend -->
+        <div class="card" style="margin-top:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Sales Trend & Forecast
             <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Dashed = projected</span>
           </div>
           <div id="kit-trend-chart" style="height:160px;"></div>
           <div id="kit-trend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
           <div id="kit-trend-summary" style="margin-top:10px;"></div>
         </div>
-        <!-- Charts -->
-        <div class="g2">
-          <div class="card">
-            <div class="card-t">Daily revenue</div>
-            <div id="kit-revenue-chart" style="height:120px;"></div>
-            <div id="kit-revenue-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
-          </div>
-          <div class="card">
-            <div class="card-t">Peak hours</div>
-            <div id="kit-hours-chart" style="height:120px;"></div>
-            <div id="kit-hours-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
-          </div>
-        </div>
-        <div class="g2">
-          <div class="card">
-            <div class="card-t">Top selling items</div>
-            <div id="kit-top-items"></div>
-          </div>
-          <div class="card">
-            <div class="card-t">Customer insights</div>
-            <div id="kit-customers"></div>
-          </div>
+        <!-- Heatmap -->
+        <div class="card" style="margin-top:14px;">
+          <div class="card-t">Order Heatmap — Day × Hour</div>
+          <div id="kit-heatmap"></div>
         </div>
         <!-- Recommendations -->
-        <div class="card">
-          <div class="card-t">Kitchen recommendations</div>
+        <div class="card" style="margin-top:14px;">
+          <div class="card-t">Kitchen Recommendations</div>
           <div id="kit-recommendations"></div>
         </div>
       </div>
@@ -843,7 +939,7 @@ function renderEmailQueue() {
 // ══════════════════════════════════════════════════════════════════════════════
 // ANALYTICS PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-let anPeriod = '30d';
+let anPeriod = '1m';
 let anData = null;
 
 function setAnPeriod(p, btn) {
@@ -881,8 +977,8 @@ async function loadAnalytics() {
 
 function getDemoAnalytics() {
   // Scale demo data based on selected time frame
-  const weekCounts = { '7d': 1, '30d': 5, '90d': 13, 'ytd': 11 };
-  const revMultipliers = { '7d': 0.25, '30d': 1, '90d': 3, 'ytd': 3.5 };
+  const weekCounts = { '1d': 1, '1w': 1, '1m': 5, '3m': 13, '1y': 11, '7d': 1, '30d': 5, '90d': 13, 'ytd': 11 };
+  const revMultipliers = { '1d': 0.04, '1w': 0.25, '1m': 1, '3m': 3, '1y': 3.5, '7d': 0.25, '30d': 1, '90d': 3, 'ytd': 3.5 };
   const rm = revMultipliers[anPeriod] || 1;
   const wc = weekCounts[anPeriod] || 5;
 
@@ -899,7 +995,7 @@ function getDemoAnalytics() {
 
   return {
     live: false,
-    range: anPeriod, rangeDays: { '7d': 7, '30d': 30, '90d': 90, 'ytd': 75 }[anPeriod] || 30,
+    range: anPeriod, rangeDays: { '1d':1, '1w':7, '1m':30, '3m':90, '1y':75, '7d':7, '30d':30, '90d':90, 'ytd':75 }[anPeriod] || 30,
     totalClients: 142, activeClients: 118, newThisMonth: Math.round(14 * rm),
     classesThisMonth: Math.round(96 * rm), totalBooked: Math.round(672 * rm), avgFillRate: 78,
     totalRevenue: Math.round(18420 * rm),
@@ -1541,7 +1637,7 @@ function loadEmailHistory() {
 // PALM KITCHEN — Restaurant Analytics
 // ══════════════════════════════════════════════════════════════════════════════
 let kitData = null;
-let kitPeriod = '30d';
+let kitPeriod = '1d';
 
 function setKitPeriod(p, btn) {
   kitPeriod = p;
@@ -1556,7 +1652,7 @@ async function loadKitchen() {
   $('kit-err').style.display = 'none';
   try {
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 8000);
+    const tid = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(`${PROXY}/api/kitchen/overview?range=${kitPeriod}`, {
       headers: { 'x-session-token': token },
       signal: controller.signal
@@ -1576,147 +1672,333 @@ async function loadKitchen() {
 }
 
 function getDemoKitchen() {
-  // Scale demo data based on selected time frame
-  const multipliers = { '7d': 0.25, '30d': 1, '90d': 3, 'ytd': 3.5 };
+  const multipliers = { '1d': 0.04, '1w': 0.25, '1m': 1, '3m': 3, '1y': 3.5 };
   const m = multipliers[kitPeriod] || 1;
-  const weekCounts = { '7d': 1, '30d': 5, '90d': 13, 'ytd': 11 };
-  const wc = weekCounts[kitPeriod] || 5;
-  const daysCounts = { '7d': 7, '30d': 14, '90d': 12, 'ytd': 14 };
-  const dc = daysCounts[kitPeriod] || 14;
-  const rangeDaysMap = { '7d': 7, '30d': 30, '90d': 90, 'ytd': 75 };
-
-  // Generate daily bars
-  var dailyRevenue = [];
-  var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var now = new Date();
-  for (var i = dc - 1; i >= 0; i--) {
-    var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-    var base = 350 + Math.sin(i * 0.5) * 120 + Math.random() * 80;
-    var label = dc <= 7 ? dayNames[d.getDay()] : monthNames[d.getMonth()] + ' ' + d.getDate();
-    dailyRevenue.push({ label: label, amount: Math.round(base), orders: Math.round(base / 14) });
-  }
-
-  // Generate weekly bars
-  var weeklyRevenue = [];
-  for (var w = 0; w < wc; w++) {
-    var wBase = 2400 + Math.sin(w * 0.7) * 400 + w * 60;
-    weeklyRevenue.push({ label: 'W' + (w+1), amount: Math.round(wBase), orders: Math.round(wBase / 14) });
-  }
-
-  var totalRevenue = Math.round(12840 * m);
-  var totalOrders = Math.round(892 * m);
-  var prevRev = Math.round(totalRevenue * 0.92);
-
+  const totalRevenue = Math.round(12840 * m);
+  const totalOrders = Math.round(892 * m);
   return {
-    live: false, range: kitPeriod, rangeDays: rangeDaysMap[kitPeriod] || 30,
-    totalRevenue: totalRevenue, todayRevenue: 485, totalOrders: totalOrders,
-    todayOrders: 34, avgOrderValue: 14.40, currency: 'EUR',
-    totalDiscounts: Math.round(320 * m), uniqueCustomers: Math.round(245 * Math.min(m, 2.5)), repeatCustomers: Math.round(78 * Math.min(m, 2)), repeatRate: 32,
-    dailyRevenue: dailyRevenue,
-    weeklyRevenue: weeklyRevenue,
-    prevRevenue: prevRev, prevOrders: Math.round(totalOrders * 0.88), prevAvgOrder: 13.80,
-    revGrowth: 8, orderGrowth: 12, avgGrowth: 4,
+    live: false, range: kitPeriod, rangeDays: kitPeriod==='1d'?1:kitPeriod==='1w'?7:kitPeriod==='1m'?30:kitPeriod==='3m'?90:75,
+    periodLabel: kitPeriod==='1d'?'Today':kitPeriod==='1w'?'This Week':kitPeriod==='1m'?'This Month':kitPeriod==='3m'?'Last 3 Months':'YTD',
+    compLabel: kitPeriod==='1d'?'vs Last Same Day':kitPeriod==='1w'?'vs Last Week':kitPeriod==='1m'?'vs Last Month':kitPeriod==='3m'?'vs Prior 3M':'vs Last Year',
+    grossSales: totalRevenue, netSales: Math.round(totalRevenue*0.93), totalTax: Math.round(totalRevenue*0.1),
+    totalDiscounts: Math.round(320*m), totalReturns: Math.round(80*m),
+    totalOrders: totalOrders, avgSale: 14.40, currency: 'EUR',
+    prevGrossSales: Math.round(totalRevenue*0.92), prevNetSales: Math.round(totalRevenue*0.85),
+    prevTotalOrders: Math.round(totalOrders*0.88), prevAvgSale: 13.80,
+    grossSalesGrowth: 8, netSalesGrowth: 9, ordersGrowth: 12, avgSaleGrowth: 4,
+    paymentTypes: { card: Math.round(totalRevenue*0.82), cash: Math.round(totalRevenue*0.15), other: Math.round(totalRevenue*0.03), prevCard: Math.round(totalRevenue*0.78), prevCash: Math.round(totalRevenue*0.14) },
+    hourlyChart: Array.from({length:24}, (_,h) => ({ hour:h, label:h===0?'12am':h<12?h+'am':h===12?'12pm':(h-12)+'pm', current:Math.round(Math.max(0,(h>=9&&h<=16?200+Math.sin(h)*100:0))*m/30), previous:Math.round(Math.max(0,(h>=9&&h<=16?180+Math.sin(h)*90:0))*m/30), curOrders:0, prevOrders:0 })),
+    categories: [
+      {name:'Bowls',revenue:Math.round(4200*m),prevRevenue:Math.round(3800*m),qty:Math.round(300*m),revGrowth:11,items:[{name:'Acai Bowl',qty:Math.round(156*m),revenue:Math.round(1872*m),prevQty:Math.round(140*m),prevRevenue:Math.round(1680*m),qtyGrowth:11,revGrowth:11},{name:'Poke Bowl',qty:Math.round(98*m),revenue:Math.round(1470*m),prevQty:Math.round(88*m),prevRevenue:Math.round(1320*m),qtyGrowth:11,revGrowth:11}]},
+      {name:'Drinks',revenue:Math.round(2400*m),prevRevenue:Math.round(2200*m),qty:Math.round(250*m),revGrowth:9,items:[{name:'Green Smoothie',qty:Math.round(134*m),revenue:Math.round(938*m),prevQty:Math.round(120*m),prevRevenue:Math.round(840*m),qtyGrowth:12,revGrowth:12}]},
+    ],
     topItems: [
-      {name:'Acai Bowl',qty:Math.round(156*m),revenue:Math.round(1872*m)},{name:'Green Smoothie',qty:Math.round(134*m),revenue:Math.round(938*m)},
-      {name:'Avocado Toast',qty:Math.round(128*m),revenue:Math.round(1536*m)},{name:'Protein Shake',qty:Math.round(112*m),revenue:Math.round(672*m)},
-      {name:'Poke Bowl',qty:Math.round(98*m),revenue:Math.round(1470*m)},{name:'Granola Bowl',qty:Math.round(87*m),revenue:Math.round(870*m)},
-      {name:'Fresh Juice',qty:Math.round(76*m),revenue:Math.round(456*m)},{name:'Chicken Wrap',qty:Math.round(64*m),revenue:Math.round(768*m)},
+      {name:'Acai Bowl',qty:Math.round(156*m),revenue:Math.round(1872*m),prevQty:Math.round(140*m),prevRevenue:Math.round(1680*m),qtyGrowth:11,revGrowth:11},
+      {name:'Green Smoothie',qty:Math.round(134*m),revenue:Math.round(938*m),prevQty:Math.round(120*m),prevRevenue:Math.round(840*m),qtyGrowth:12,revGrowth:12},
+      {name:'Avocado Toast',qty:Math.round(128*m),revenue:Math.round(1536*m),prevQty:Math.round(110*m),prevRevenue:Math.round(1320*m),qtyGrowth:16,revGrowth:16},
     ],
-    peakHours: [
-      {hour:12,count:Math.round(142*m)},{hour:13,count:Math.round(128*m)},{hour:11,count:Math.round(96*m)},
-      {hour:14,count:Math.round(84*m)},{hour:10,count:Math.round(72*m)},{hour:9,count:Math.round(48*m)},
-      {hour:15,count:Math.round(36*m)},{hour:16,count:Math.round(24*m)},
-    ],
+    dailyRevenue: Array.from({length:Math.min(14,kitPeriod==='1d'?24:7)}, (_,i) => ({label:kitPeriod==='1d'?(i<12?i+'am':i===12?'12pm':(i-12)+'pm'):['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i%7], amount:Math.round(350+Math.sin(i*0.5)*120), orders:Math.round(25+Math.random()*10)})),
+    hourlyHeatmap: [],
+    uniqueCustomers: Math.round(245*Math.min(m,2.5)), repeatCustomers: Math.round(78*Math.min(m,2)), repeatRate: 32,
+    totalRevenue: Math.round(totalRevenue*0.93), avgOrderValue: 14.40,
+    revGrowth: 9, orderGrowth: 12, avgGrowth: 4,
   };
 }
 
 function renderKitchen(d) {
-  const rangeLabel = {
-    '7d':'7 days','30d':'30 days','90d':'3 months','ytd':'Year to date'
-  }[d.range || kitPeriod] || '30 days';
+  const rangeLabels = {'1d':'Today','1w':'This Week','1m':'This Month','3m':'Last 3 Months','1y':'Year to Date'};
+  const rangeLabel = d.periodLabel || rangeLabels[d.range || kitPeriod] || 'Today';
+  const compLabel = d.compLabel || 'vs prior period';
   $('kit-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${d.live ? 'Live from Square' : 'Demo data'} · ${rangeLabel}`;
   const cur = d.currency === 'EUR' ? '\u20AC' : '$';
+  const fmt = (v) => v >= 1000 ? (v/1000).toFixed(1) + 'k' : (typeof v === 'number' ? v.toFixed(2) : v);
 
-  // Growth arrows helper
-  function gPill(val, label) {
-    if (val === undefined || val === null) return `<div class="an-pill an-flat">${label}</div>`;
+  // Growth pill helper
+  function gPill(val) {
+    if (val === undefined || val === null) return '';
     const cls = val > 0 ? 'an-up' : val < 0 ? 'an-down' : 'an-flat';
-    return `<div class="an-pill ${cls}">${val > 0 ? '+' : ''}${val}% vs prior</div>`;
+    return `<div class="an-pill ${cls}">${val > 0 ? '+' : ''}${val}%</div>`;
   }
 
-  // KPIs with comparison data
-  $('kit-kpis').innerHTML = `
-    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Revenue</div><div class="stat-v">${cur}${d.totalRevenue>=1000?(d.totalRevenue/1000).toFixed(1)+'k':d.totalRevenue}</div>${gPill(d.revGrowth, rangeLabel)}</div>
-    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Today</div><div class="stat-v">${cur}${d.todayRevenue}</div><div class="an-pill an-up">${d.todayOrders} orders</div></div>
-    <div class="an-stat"><div class="an-stat-ico">#</div><div class="stat-l">Total orders</div><div class="stat-v">${d.totalOrders}</div>${gPill(d.orderGrowth, rangeLabel)}</div>
-    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Avg order</div><div class="stat-v">${cur}${d.avgOrderValue}</div>${gPill(d.avgGrowth, d.avgOrderValue>12?'Good':'Room to grow')}</div>
-    <div class="an-stat"><div class="an-stat-ico">%</div><div class="stat-l">Repeat rate</div><div class="stat-v">${d.repeatRate}%</div><div class="an-pill ${d.repeatRate>25?'an-up':'an-down'}">${d.repeatCustomers} regulars</div></div>`;
+  // ── Sales Summary (Square-style) ──────────────────────────────────────────
+  $('kit-comp-label').textContent = compLabel;
+  $('kit-sales-summary').innerHTML = `
+    <div style="padding:10px;background:#FFFBEB;border-radius:10px;">
+      <div style="font-size:10px;color:#92400E;text-transform:uppercase;letter-spacing:.5px;">Gross Sales</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${cur}${fmt(d.grossSales||0)}</div>
+      ${gPill(d.grossSalesGrowth)}
+    </div>
+    <div style="padding:10px;background:#F0FDF4;border-radius:10px;">
+      <div style="font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Net Sales</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${cur}${fmt(d.netSales||0)}</div>
+      ${gPill(d.netSalesGrowth)}
+    </div>
+    <div style="padding:10px;background:#F9FAFB;border-radius:10px;">
+      <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;"># Sales</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.totalOrders}</div>
+      ${gPill(d.ordersGrowth)}
+    </div>
+    <div style="padding:10px;background:#F9FAFB;border-radius:10px;">
+      <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Avg Sale</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${cur}${(d.avgSale||d.avgOrderValue||0).toFixed(2)}</div>
+      ${gPill(d.avgSaleGrowth)}
+    </div>
+    <div style="padding:10px;background:#FEE2E2;border-radius:10px;">
+      <div style="font-size:10px;color:#991B1B;text-transform:uppercase;letter-spacing:.5px;">Discounts</div>
+      <div style="font-size:18px;font-weight:700;color:#991B1B;margin:2px 0;">-${cur}${fmt(d.totalDiscounts||0)}</div>
+    </div>
+    <div style="padding:10px;background:#FEF3C7;border-radius:10px;">
+      <div style="font-size:10px;color:#92400E;text-transform:uppercase;letter-spacing:.5px;">Returns</div>
+      <div style="font-size:18px;font-weight:700;color:#92400E;margin:2px 0;">-${cur}${fmt(d.totalReturns||0)}</div>
+    </div>`;
 
-  // Sales trend + forecast chart
-  renderKitTrend(d, cur);
+  // ── Hourly Sales Chart (current vs previous) ─────────────────────────────
+  $('kit-cur-label').textContent = rangeLabel;
+  $('kit-prev-label').textContent = compLabel.replace('vs ','');
+  const hChart = d.hourlyChart || [];
+  const maxHour = Math.max(...hChart.map(h => Math.max(h.current, h.previous)), 1);
+  // Only show hours 7am-11pm
+  const visibleHours = hChart.filter(h => h.hour >= 7 && h.hour <= 23);
+  $('kit-hourly-chart').innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:100%;">${visibleHours.map(h => {
+    const curH = Math.max((h.current / maxHour) * 100, 2);
+    const prevH = Math.max((h.previous / maxHour) * 100, 2);
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;height:100%;justify-content:flex-end;" title="${h.label}: ${cur}${h.current} (prev: ${cur}${h.previous})">
+      <div style="width:60%;background:#D97706;border-radius:2px 2px 0 0;height:${curH}%;min-height:2px;"></div>
+      <div style="width:60%;background:#CBD5E1;border-radius:2px 2px 0 0;height:${prevH}%;min-height:2px;opacity:0.6;margin-top:-${prevH}%;"></div>
+    </div>`;
+  }).join('')}</div>`;
+  $('kit-hourly-labels').innerHTML = visibleHours.filter((_,i) => i % 2 === 0).map(h => `<span>${h.label}</span>`).join('');
 
-  // Daily revenue chart
-  const dailyData = d.dailyRevenue || [];
-  const maxDay = Math.max(...dailyData.map(r=>r.amount), 1);
-  $('kit-revenue-chart').innerHTML = `<div class="an-bar-row">${dailyData.map((r,i) =>
-    `<div class="an-bar" style="height:${Math.max((r.amount/maxDay)*100,4)}%;background:${i===dailyData.length-1?'#D97706':'#FEF3C7'};" data-tip="${r.label}: ${cur}${r.amount} (${r.orders} orders)"></div>`
-  ).join('')}</div>`;
-  $('kit-revenue-labels').innerHTML = dailyData.map(r=>`<span>${r.label}</span>`).join('');
+  // ── Payment Types ─────────────────────────────────────────────────────────
+  const pt = d.paymentTypes || {};
+  const ptTotal = (pt.card||0) + (pt.cash||0) + (pt.other||0);
+  const ptPct = (v) => ptTotal > 0 ? Math.round((v/ptTotal)*100) : 0;
+  $('kit-payment-types').innerHTML = `
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:10px;">
+        <div style="width:${ptPct(pt.card)}%;background:#3B82F6;"></div>
+        <div style="width:${ptPct(pt.cash)}%;background:#10B981;"></div>
+        <div style="width:${ptPct(pt.other)}%;background:#9CA3AF;"></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#EFF6FF;border-radius:8px;">
+        <div><span style="display:inline-block;width:8px;height:8px;background:#3B82F6;border-radius:50%;margin-right:6px;"></span><span style="font-size:13px;font-weight:500;">Card</span></div>
+        <div style="font-size:13px;font-weight:600;">${cur}${fmt(pt.card||0)} <span style="font-size:11px;color:#6B7280;">(${ptPct(pt.card)}%)</span></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#ECFDF5;border-radius:8px;">
+        <div><span style="display:inline-block;width:8px;height:8px;background:#10B981;border-radius:50%;margin-right:6px;"></span><span style="font-size:13px;font-weight:500;">Cash</span></div>
+        <div style="font-size:13px;font-weight:600;">${cur}${fmt(pt.cash||0)} <span style="font-size:11px;color:#6B7280;">(${ptPct(pt.cash)}%)</span></div>
+      </div>
+      ${(pt.other||0) > 0 ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#F3F4F6;border-radius:8px;">
+        <div><span style="display:inline-block;width:8px;height:8px;background:#9CA3AF;border-radius:50%;margin-right:6px;"></span><span style="font-size:13px;font-weight:500;">Other</span></div>
+        <div style="font-size:13px;font-weight:600;">${cur}${fmt(pt.other||0)} <span style="font-size:11px;color:#6B7280;">(${ptPct(pt.other)}%)</span></div>
+      </div>` : ''}
+    </div>`;
 
-  // Peak hours
-  const peakData = d.peakHours || [];
-  const maxH = Math.max(...peakData.map(h=>h.count), 1);
-  $('kit-hours-chart').innerHTML = `<div class="an-bar-row">${peakData.map(h =>
-    `<div class="an-bar" style="height:${Math.max((h.count/maxH)*100,4)}%;background:${h.count===maxH?'#DC2626':'#FEE2E2'};" data-tip="${h.hour}:00 — ${h.count} orders"></div>`
-  ).join('')}</div>`;
-  $('kit-hours-labels').innerHTML = peakData.map(h=>`<span>${h.hour}:00</span>`).join('');
-
-  // Top items
-  const maxQty = Math.max(...(d.topItems||[]).map(i=>i.qty), 1);
-  $('kit-top-items').innerHTML = (d.topItems||[]).map((item, idx) => {
-    const pct = Math.round((item.qty/maxQty)*100);
-    return `<div class="ab-wrap"><div class="ab-lbl"><span style="font-weight:500;">${idx+1}. ${item.name}</span><span>${item.qty} sold · ${cur}${item.revenue}</span></div><div class="ab-track"><div class="ab-fill" style="width:${pct}%;background:#D97706;"></div></div></div>`;
-  }).join('');
-
-  // Customer insights
+  // ── Customer Insights ─────────────────────────────────────────────────────
   $('kit-customers').innerHTML = `
-    <div style="display:flex;gap:16px;margin-bottom:14px;">
+    <div style="display:flex;gap:12px;margin-bottom:14px;">
       <div style="flex:1;text-align:center;padding:12px;background:#FEF3C7;border-radius:10px;">
         <div style="font-size:20px;font-weight:700;color:#92400E;">${d.uniqueCustomers}</div>
-        <div style="font-size:11px;color:#92400E;">Unique customers</div>
+        <div style="font-size:11px;color:#92400E;">Unique</div>
       </div>
       <div style="flex:1;text-align:center;padding:12px;background:#DCFCE7;border-radius:10px;">
         <div style="font-size:20px;font-weight:700;color:#166534;">${d.repeatCustomers}</div>
-        <div style="font-size:11px;color:#166534;">Repeat customers</div>
+        <div style="font-size:11px;color:#166534;">Repeat</div>
       </div>
-      <div style="flex:1;text-align:center;padding:12px;background:#FEE2E2;border-radius:10px;">
-        <div style="font-size:20px;font-weight:700;color:#991B1B;">${cur}${d.totalDiscounts}</div>
-        <div style="font-size:11px;color:#991B1B;">Discounts given</div>
-      </div>
-    </div>
-    <div class="an-alert an-alert-g">
-      <span style="font-size:16px;">&#128161;</span>
-      <div style="flex:1;font-size:12px;">
-        <strong>${d.repeatRate}% repeat rate</strong><br>
-        <span style="color:#6B7280;">${d.repeatRate>=30?'Strong loyalty — consider a loyalty program to reward regulars.':'Try a stamp card or loyalty discount to increase repeat visits.'}</span>
+      <div style="flex:1;text-align:center;padding:12px;background:#EDE9FE;border-radius:10px;">
+        <div style="font-size:20px;font-weight:700;color:#5B21B6;">${d.repeatRate}%</div>
+        <div style="font-size:11px;color:#5B21B6;">Repeat rate</div>
       </div>
     </div>`;
 
-  // Recommendations
-  const recs = [];
-  if (d.avgOrderValue < 15) recs.push({icon:'&#128176;',color:'#FEF3C7',title:'Increase average order value',desc:`At ${cur}${d.avgOrderValue}, there's room to grow. Try combo deals (smoothie + bowl), upsell add-ons (protein, superfoods), or a "meal deal" bundle.`,priority:'High'});
-  if (d.peakHours && d.peakHours[0]) recs.push({icon:'&#9200;',color:'#DBEAFE',title:`Peak hour: ${d.peakHours[0].hour}:00`,desc:`Your busiest hour is ${d.peakHours[0].hour}:00 with ${d.peakHours[0].count} orders. Ensure staffing is optimised and prep is done before the rush.`,priority:'Tip'});
-  if (d.topItems && d.topItems[0]) recs.push({icon:'&#11088;',color:'#DCFCE7',title:`${d.topItems[0].name} is your best seller`,desc:`${d.topItems[0].qty} sold this month. Feature it prominently, create variations, and never run out of ingredients for it.`,priority:'Tip'});
-  recs.push({icon:'&#127793;',color:'#EDE9FE',title:'Cross-sell with Lagree clients',desc:'Offer a post-workout smoothie discount to studio clients. A QR code at reception linking to the menu could drive traffic.',priority:'Growth'});
-  if (d.totalDiscounts > d.totalRevenue * 0.03) recs.push({icon:'&#9888;',color:'#FEE2E2',title:'Watch discount levels',desc:`${cur}${d.totalDiscounts} in discounts this month (${Math.round(d.totalDiscounts/d.totalRevenue*100)}% of revenue). Review which discounts are driving value vs. eroding margin.`,priority:'High'});
+  // ── Top Categories (expandable) ───────────────────────────────────────────
+  renderKitCategories(d, cur);
 
-  const pc = {'Urgent':'b-r','High':'b-a','Tip':'b-g','Growth':'b-b','Ongoing':'b-b'};
+  // ── Top Items ─────────────────────────────────────────────────────────────
+  renderKitTopItems(d, cur);
+
+  // ── Sales Trend & Forecast ────────────────────────────────────────────────
+  renderKitTrend(d, cur);
+
+  // ── Heatmap ───────────────────────────────────────────────────────────────
+  renderKitHeatmap(d);
+
+  // ── Recommendations ───────────────────────────────────────────────────────
+  const recs = [];
+  const avgVal = d.avgSale || d.avgOrderValue || 0;
+  if (avgVal < 15) recs.push({icon:'&#128176;',color:'#FEF3C7',title:'Increase average sale',desc:`At ${cur}${avgVal.toFixed(2)}, try combo deals, upsell add-ons, or "meal deal" bundles.`,priority:'High'});
+  if (d.topItems && d.topItems[0]) recs.push({icon:'&#11088;',color:'#DCFCE7',title:`${d.topItems[0].name} is your #1 item`,desc:`${d.topItems[0].qty} sold — feature it prominently and never run out of ingredients.`,priority:'Tip'});
+  if (d.hourlyChart) {
+    const peakH = d.hourlyChart.reduce((best, h) => h.current > best.current ? h : best, {current:0,label:''});
+    if (peakH.current > 0) recs.push({icon:'&#9200;',color:'#DBEAFE',title:`Peak hour: ${peakH.label}`,desc:`${cur}${peakH.current} in sales. Ensure staffing and prep are optimised before the rush.`,priority:'Tip'});
+  }
+  recs.push({icon:'&#127793;',color:'#EDE9FE',title:'Cross-sell with Lagree clients',desc:'Offer a post-workout smoothie discount to studio clients.',priority:'Growth'});
+  if ((d.totalDiscounts||0) > (d.grossSales||d.totalRevenue||1) * 0.03) recs.push({icon:'&#9888;',color:'#FEE2E2',title:'Watch discount levels',desc:`${cur}${d.totalDiscounts} in discounts — review which are driving value vs eroding margin.`,priority:'High'});
+
+  const pc = {'Urgent':'b-r','High':'b-a','Tip':'b-g','Growth':'b-b'};
   $('kit-recommendations').innerHTML = recs.map(r=>`
     <div class="an-rec" style="display:flex;align-items:flex-start;gap:12px;">
       <div class="an-rec-ico" style="background:${r.color};">${r.icon}</div>
       <div style="flex:1;"><div style="font-size:13px;font-weight:600;margin-bottom:2px;">${r.title} <span class="badge ${pc[r.priority]||'b-b'}">${r.priority}</span></div><div style="font-size:12px;color:#4B5563;line-height:1.6;">${r.desc}</div></div>
     </div>`).join('');
+}
+
+// ─── Expandable Categories (Square-style) ───────────────────────────────────
+function renderKitCategories(d, cur) {
+  var el = $('kit-categories');
+  if (!el) return;
+  var cats = d.categories || [];
+  if (!cats.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No category data</div>'; return; }
+  var totalRev = cats.reduce(function(a,c){ return a + c.revenue; }, 0) || 1;
+
+  el.innerHTML = cats.map(function(cat, idx) {
+    var pct = Math.round((cat.revenue / totalRev) * 100);
+    var gCls = cat.revGrowth > 0 ? 'color:#16A34A' : cat.revGrowth < 0 ? 'color:#DC2626' : 'color:#6B7280';
+    var gSign = cat.revGrowth > 0 ? '+' : '';
+
+    var itemsHtml = cat.items.map(function(item) {
+      var iGCls = item.revGrowth > 0 ? 'color:#16A34A' : item.revGrowth < 0 ? 'color:#DC2626' : 'color:#6B7280';
+      var iGSign = item.revGrowth > 0 ? '+' : '';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 6px 24px;border-bottom:1px solid #F3F4F6;font-size:12px;">' +
+        '<div style="flex:1;">' + item.name + '</div>' +
+        '<div style="width:60px;text-align:right;">' + item.qty + ' sold</div>' +
+        '<div style="width:80px;text-align:right;font-weight:500;">' + cur + item.revenue + '</div>' +
+        '<div style="width:60px;text-align:right;font-size:11px;' + iGCls + ';">' + iGSign + item.revGrowth + '%</div>' +
+      '</div>';
+    }).join('');
+
+    return '<div class="item-row" style="margin-bottom:2px;">' +
+      '<div onclick="this.parentElement.querySelector(\'.cat-items\').classList.toggle(\'open\')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 8px;cursor:pointer;border-bottom:1px solid #F3F4F6;">' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span style="font-size:10px;color:#9CA3AF;">&#9660;</span>' +
+          '<span style="font-weight:600;font-size:13px;">' + cat.name + '</span>' +
+          '<span style="font-size:11px;color:#9CA3AF;">' + cat.qty + ' items</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:12px;">' +
+          '<div style="width:80px;height:6px;background:#F3F4F6;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#D97706;width:' + pct + '%;border-radius:3px;"></div></div>' +
+          '<span style="font-weight:600;font-size:13px;width:80px;text-align:right;">' + cur + cat.revenue + '</span>' +
+          '<span style="font-size:11px;width:50px;text-align:right;' + gCls + ';">' + gSign + cat.revGrowth + '%</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cat-items" style="max-height:0;overflow:hidden;transition:max-height .3s ease;">' + itemsHtml + '</div>' +
+    '</div>';
+  }).join('');
+
+  // Add CSS for expanding
+  if (!document.getElementById('cat-expand-style')) {
+    var s = document.createElement('style');
+    s.id = 'cat-expand-style';
+    s.textContent = '.cat-items.open{max-height:500px!important;}';
+    document.head.appendChild(s);
+  }
+}
+
+// ─── Top Items (flat list with growth) ──────────────────────────────────────
+function renderKitTopItems(d, cur) {
+  var el = $('kit-top-items');
+  if (!el) return;
+  var items = d.topItems || [];
+  if (!items.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No item data</div>'; return; }
+  var maxRev = Math.max.apply(null, items.map(function(i){ return i.revenue; })) || 1;
+
+  el.innerHTML = items.map(function(item, idx) {
+    var pct = Math.round((item.revenue / maxRev) * 100);
+    var gCls = (item.revGrowth||0) > 0 ? 'color:#16A34A' : (item.revGrowth||0) < 0 ? 'color:#DC2626' : 'color:#6B7280';
+    var gSign = (item.revGrowth||0) > 0 ? '+' : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #F3F4F6;">' +
+      '<div style="width:20px;font-size:11px;color:#9CA3AF;text-align:center;">' + (idx+1) + '</div>' +
+      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;">' + item.name + '</div>' +
+        '<div style="height:4px;background:#F3F4F6;border-radius:2px;margin-top:4px;"><div style="height:100%;background:#D97706;width:' + pct + '%;border-radius:2px;"></div></div></div>' +
+      '<div style="width:50px;text-align:right;font-size:12px;color:#6B7280;">' + item.qty + '</div>' +
+      '<div style="width:80px;text-align:right;font-size:13px;font-weight:600;">' + cur + item.revenue + '</div>' +
+      '<div style="width:50px;text-align:right;font-size:11px;' + gCls + ';">' + gSign + (item.revGrowth||0) + '%</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ─── Custom date range loader ────────────────────────────────────────────────
+function loadKitchenCustomRange() {
+  var startVal = $('kit-start-date').value;
+  var endVal = $('kit-end-date').value;
+  if (!startVal || !endVal) return;
+  // Reset button styles
+  document.querySelectorAll('.tf-kit').forEach(function(b) { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
+  kitPeriod = 'custom';
+  loaded['kitchen'] = false;
+  // Load with custom dates
+  ld('kit', true);
+  $('kit-err').style.display = 'none';
+  var controller = new AbortController();
+  var tid = setTimeout(function() { controller.abort(); }, 12000);
+  fetch(PROXY + '/api/kitchen/overview?startDate=' + startVal + '&endDate=' + endVal, {
+    headers: { 'x-session-token': token },
+    signal: controller.signal
+  }).then(function(res) {
+    clearTimeout(tid);
+    return res.json();
+  }).then(function(data) {
+    if (data.error && !data.live) throw new Error(data.error);
+    kitData = data;
+    ld('kit', false); bd('kit');
+    renderKitchen(data);
+  }).catch(function(e) {
+    ld('kit', false); bd('kit');
+    kitData = getDemoKitchen();
+    er('kit', 'Using demo data — ' + e.message);
+    renderKitchen(kitData);
+  });
+}
+
+// (renderKitYoY and renderKitItemAnalytics replaced by renderKitCategories and renderKitTopItems above)
+
+// ─── Order heatmap ───────────────────────────────────────────────────────────
+function renderKitHeatmap(d) {
+  var el = $('kit-heatmap');
+  if (!el) return;
+  var heatmap = d.hourlyHeatmap;
+  if (!heatmap || !heatmap.length) {
+    // Build from peak hours as fallback
+    el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">Heatmap available with live data</div>';
+    return;
+  }
+
+  var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var maxCount = Math.max.apply(null, heatmap.map(function(h) { return h.count; }));
+  if (maxCount <= 0) maxCount = 1;
+
+  // Build lookup
+  var lookup = {};
+  heatmap.forEach(function(h) { lookup[h.day + '-' + h.hour] = h.count; });
+
+  var html = '<div class="heatmap">';
+  // Header row
+  html += '<div class="heatmap-label"></div>';
+  for (var h = 6; h <= 22; h++) html += '<div style="text-align:center;font-size:9px;color:#9CA3AF;">' + h + '</div>';
+  // Data rows
+  for (var day = 1; day <= 6; day++) {
+    var dIdx = day % 7;
+    html += '<div class="heatmap-label">' + dayNames[dIdx] + '</div>';
+    for (var hr = 6; hr <= 22; hr++) {
+      var count = lookup[dIdx + '-' + hr] || 0;
+      var intensity = count / maxCount;
+      var bg = intensity === 0 ? '#F3F4F6' : 'rgba(217,119,6,' + (0.15 + intensity * 0.85).toFixed(2) + ')';
+      var textColor = intensity > 0.5 ? '#fff' : '#6B7280';
+      html += '<div class="heatmap-cell" style="background:' + bg + ';color:' + textColor + ';" title="' + dayNames[dIdx] + ' ' + hr + ':00 — ' + count + ' orders">' + (count > 0 ? count : '') + '</div>';
+    }
+  }
+  // Sunday
+  html += '<div class="heatmap-label">' + dayNames[0] + '</div>';
+  for (var hr2 = 6; hr2 <= 22; hr2++) {
+    var count2 = lookup['0-' + hr2] || 0;
+    var intensity2 = count2 / maxCount;
+    var bg2 = intensity2 === 0 ? '#F3F4F6' : 'rgba(217,119,6,' + (0.15 + intensity2 * 0.85).toFixed(2) + ')';
+    var tc2 = intensity2 > 0.5 ? '#fff' : '#6B7280';
+    html += '<div class="heatmap-cell" style="background:' + bg2 + ';color:' + tc2 + ';" title="Sun ' + hr2 + ':00 — ' + count2 + ' orders">' + (count2 > 0 ? count2 : '') + '</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 // ─── Smart forecasting engine ────────────────────────────────────────────────
@@ -1847,7 +2129,7 @@ function renderKitTrend(d, cur) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MASTER DASHBOARD — Combined business view
 // ══════════════════════════════════════════════════════════════════════════════
-let masterPeriod = '30d';
+let masterPeriod = '1m';
 function setMasterPeriod(p, btn) {
   masterPeriod = p;
   document.querySelectorAll('.tf-master').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
@@ -1887,7 +2169,7 @@ function renderMaster(studio, kitchen) {
   const kitchenRev = kitchen.totalRevenue || 0;
   const totalRev = studioRev + kitchenRev;
   const cur = '\u20AC';
-  const rangeLabel = {'7d':'7 days','30d':'30 days','90d':'3 months','ytd':'Year to date'}[masterPeriod] || '30 days';
+  const rangeLabel = kitchen.periodLabel || {'1d':'Today','1w':'This Week','1m':'This Month','3m':'Last 3 Months','1y':'Year to Date'}[masterPeriod] || 'This Month';
   $('master-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${rangeLabel}`;
 
   // KPIs
@@ -1983,6 +2265,152 @@ function renderMaster(studio, kitchen) {
       <div class="an-rec-ico" style="background:#DBEAFE;">&#9993;</div>
       <div><div style="font-size:13px;font-weight:500;">Email Campaigns</div><div style="font-size:11px;color:#6B7280;">Send to studio clients or all</div></div>
     </div>`;
+
+  // Master YoY comparison
+  renderMasterYoY(studio, kitchen, cur);
+
+  // Master recommendations
+  renderMasterRecs(studio, kitchen, cur);
+}
+
+// ─── Master YoY ──────────────────────────────────────────────────────────────
+function renderMasterYoY(studio, kitchen, cur) {
+  var yoyEl = $('master-yoy');
+  if (!kitchen.yoyRevenue && kitchen.yoyRevenue !== 0) { yoyEl.style.display = 'none'; return; }
+  yoyEl.style.display = 'block';
+
+  var kitCur = kitchen.totalRevenue || 0;
+  var kitYoy = kitchen.yoyRevenue || 0;
+  var studioCur = studio.totalRevenue || 0;
+  var totalCur = kitCur + studioCur;
+  var totalYoy = kitYoy; // only kitchen has YoY from Square
+
+  function yoyRow(label, current, prev, isCur) {
+    var ch = prev > 0 ? Math.round(((current - prev) / prev) * 100) : (current > 0 ? 100 : 0);
+    var cls = ch > 0 ? 'yoy-up' : ch < 0 ? 'yoy-down' : 'yoy-flat';
+    var arrow = ch > 0 ? '&#9650;' : ch < 0 ? '&#9660;' : '&#9654;';
+    var fmt = function(v) { return isCur ? cur + (v >= 1000 ? (v/1000).toFixed(1) + 'k' : Math.round(v)) : v; };
+    return '<div class="yoy-row"><div class="yoy-label">' + label + '</div><div class="yoy-current">' + fmt(current) + '</div><div class="yoy-prev">' + fmt(prev) + ' last year</div><div class="yoy-change ' + cls + '">' + arrow + ' ' + (ch > 0 ? '+' : '') + ch + '%</div></div>';
+  }
+
+  $('master-yoy-content').innerHTML =
+    yoyRow('Kitchen revenue', kitCur, kitYoy, true) +
+    yoyRow('Kitchen orders', kitchen.totalOrders || 0, kitchen.yoyOrders || 0, false) +
+    yoyRow('Kitchen avg order', kitchen.avgOrderValue || 0, kitchen.yoyAvgOrder || 0, true);
+}
+
+// ─── Master actionable recommendations ───────────────────────────────────────
+function renderMasterRecs(studio, kitchen, cur) {
+  var recs = [];
+  var kitRev = kitchen.totalRevenue || 0;
+  var studRev = studio.totalRevenue || 0;
+  var totalRev = kitRev + studRev;
+
+  // Kitchen-specific recs
+  if (kitchen.avgOrderValue && kitchen.avgOrderValue < 15) {
+    recs.push({ priority: 'high', area: 'Kitchen', title: 'Increase average order to ' + cur + '18+',
+      desc: 'Current avg is ' + cur + kitchen.avgOrderValue + '. Add combo deals (bowl + drink ' + cur + '16), upsell protein/superfoods (+' + cur + '2-3), and introduce a lunch meal deal.',
+      impact: 'Could add ' + cur + Math.round(kitchen.totalOrders * 3) + ' in revenue if avg increases by ' + cur + '3',
+      action: 'Create 3 combo deals this week and train staff on upselling' });
+  }
+
+  if (kitchen.revGrowth !== undefined && kitchen.revGrowth < 0) {
+    recs.push({ priority: 'critical', area: 'Kitchen', title: 'Revenue declining ' + kitchen.revGrowth + '% vs last period',
+      desc: 'Kitchen revenue is trending down. Analyse which items are underperforming and consider a promotional push.',
+      impact: 'Stopping the decline could recover ' + cur + Math.abs(Math.round(kitRev * kitchen.revGrowth / 100)),
+      action: 'Run a 48-hour flash promotion on top 3 items this weekend' });
+  } else if (kitchen.revGrowth > 15) {
+    recs.push({ priority: 'low', area: 'Kitchen', title: 'Strong growth at +' + kitchen.revGrowth + '%',
+      desc: 'Kitchen is performing well. Double down on what is working — promote best sellers and expand peak hour capacity.',
+      impact: 'Maintaining this trajectory could bring ' + cur + Math.round(kitRev * 1.15) + ' next period',
+      action: 'Ensure stock levels support continued growth' });
+  }
+
+  if (kitchen.repeatRate !== undefined && kitchen.repeatRate < 30) {
+    recs.push({ priority: 'high', area: 'Kitchen', title: 'Boost repeat rate from ' + kitchen.repeatRate + '% to 40%',
+      desc: 'Only ' + kitchen.repeatRate + '% of customers come back. Launch a stamp card (buy 8 get 1 free) or a loyalty app QR code.',
+      impact: '10% more repeats = ~' + cur + Math.round(kitchen.avgOrderValue * kitchen.uniqueCustomers * 0.1) + ' additional revenue',
+      action: 'Design and print stamp cards; train staff to hand them out with every order' });
+  }
+
+  if (kitchen.topItems && kitchen.topItems.length >= 2) {
+    var top = kitchen.topItems[0];
+    var topRev = top.revenue || 0;
+    if (topRev > kitRev * 0.25) {
+      recs.push({ priority: 'medium', area: 'Kitchen', title: top.name + ' dominates at ' + Math.round(topRev/kitRev*100) + '% of revenue',
+        desc: 'Heavy reliance on one item is risky. Diversify by promoting 2nd and 3rd best sellers with featured placement.',
+        impact: 'Better balance protects against supply disruption and keeps the menu fresh',
+        action: 'Feature ' + kitchen.topItems[1].name + ' as "Item of the week" on social media' });
+    }
+  }
+
+  if (kitchen.peakHours && kitchen.peakHours.length >= 2) {
+    var peakH = kitchen.peakHours[0];
+    var offPeak = kitchen.peakHours[kitchen.peakHours.length - 1];
+    if (offPeak.count < peakH.count * 0.3) {
+      recs.push({ priority: 'medium', area: 'Kitchen', title: 'Drive traffic during off-peak hours',
+        desc: 'Only ' + offPeak.count + ' orders at ' + offPeak.hour + ':00 vs ' + peakH.count + ' at peak ' + peakH.hour + ':00. Try a happy hour or early bird discount.',
+        impact: 'Even 20 more orders during off-peak = ' + cur + Math.round(20 * (kitchen.avgOrderValue || 14)) + ' extra',
+        action: 'Launch a "3-5pm Happy Hour: 15% off smoothies" promotion' });
+    }
+  }
+
+  // Studio-specific recs
+  if ((studio.avgFillRate || 78) < 75) {
+    recs.push({ priority: 'high', area: 'Studio', title: 'Fill rate at ' + (studio.avgFillRate||78) + '% — target 85%',
+      desc: 'Empty spots are lost revenue. Push under-filled classes on Instagram Stories 24h before, and offer last-minute discounts.',
+      impact: '10% fill rate increase = ~' + cur + Math.round(studRev * 0.13) + ' more revenue',
+      action: 'Post "spots available" stories for tomorrow\'s classes today at 6pm' });
+  }
+
+  if ((studio.atRiskCount || 0) > 5) {
+    recs.push({ priority: 'critical', area: 'Studio', title: 'Win back ' + (studio.atRiskCount || 0) + ' at-risk clients',
+      desc: 'These clients have not visited in 14+ days and may churn. A personalised email with a 15% comeback offer works well.',
+      impact: 'Recovering 50% of at-risk clients = ' + cur + Math.round((studio.atRiskCount || 0) * 0.5 * 150),
+      action: 'Send a win-back email campaign to at-risk list this week' });
+  }
+
+  // Cross-business rec
+  recs.push({ priority: 'medium', area: 'Both', title: 'Cross-sell between studio and kitchen',
+    desc: 'Studio clients are ideal kitchen customers. Offer a post-workout smoothie deal shown at checkout or via QR at reception.',
+    impact: 'If 20% of studio clients buy a ' + cur + '8 smoothie = ' + cur + Math.round((studio.activeClients || 100) * 0.2 * 8 * 4) + '/month',
+    action: 'Create a "Post-Workout Fuel" QR code linking to the kitchen menu with 10% discount' });
+
+  // YoY kitchen comparison rec
+  if (kitchen.yoyRevGrowth !== undefined) {
+    if (kitchen.yoyRevGrowth < 0) {
+      recs.push({ priority: 'critical', area: 'Kitchen', title: 'Revenue down ' + kitchen.yoyRevGrowth + '% vs last year',
+        desc: 'Year-over-year decline suggests a structural issue. Review menu pricing, foot traffic, and competitor activity.',
+        impact: 'Returning to last year levels = ' + cur + Math.round(Math.abs((kitchen.yoyRevenue || 0) - kitRev)),
+        action: 'Schedule a menu review session and check Google Maps reviews for feedback' });
+    } else if (kitchen.yoyRevGrowth > 20) {
+      recs.push({ priority: 'low', area: 'Kitchen', title: 'Excellent YoY growth of +' + kitchen.yoyRevGrowth + '%',
+        desc: 'Strong year-over-year performance. Document what is working and plan for capacity.',
+        impact: 'Sustained growth trajectory',
+        action: 'Review staffing levels for next month to handle increased demand' });
+    }
+  }
+
+  // Sort: critical first, then high, medium, low
+  var order = { critical: 0, high: 1, medium: 2, low: 3 };
+  recs.sort(function(a, b) { return (order[a.priority] || 99) - (order[b.priority] || 99); });
+
+  $('master-rec-count').textContent = recs.length;
+
+  var pClasses = { critical: 'rec-p-critical', high: 'rec-p-high', medium: 'rec-p-medium', low: 'rec-p-low' };
+  $('master-recommendations').innerHTML = recs.length ? recs.map(function(r) {
+    return '<div class="rec-card">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
+        '<div style="font-size:13px;font-weight:600;">' + r.title + '</div>' +
+        '<div><span class="rec-priority ' + (pClasses[r.priority]||'rec-p-medium') + '">' + r.priority + '</span> <span class="badge b-b" style="margin-left:4px;">' + r.area + '</span></div>' +
+      '</div>' +
+      '<div style="font-size:12px;color:#4B5563;margin-bottom:8px;">' + r.desc + '</div>' +
+      '<div style="display:flex;gap:12px;">' +
+        '<div style="flex:1;padding:8px;background:#F0FDF4;border-radius:6px;font-size:11px;"><strong style="color:#166534;">Impact:</strong> <span style="color:#374151;">' + r.impact + '</span></div>' +
+        '<div style="flex:1;padding:8px;background:#EFF6FF;border-radius:6px;font-size:11px;"><strong style="color:#1E40AF;">Action:</strong> <span style="color:#374151;">' + r.action + '</span></div>' +
+      '</div>' +
+    '</div>';
+  }).join('') : '<div style="font-size:12px;color:#6B7280;padding:12px;">Everything looks healthy — no urgent actions needed.</div>';
 }
 
 // ─── Master trend + forecast ─────────────────────────────────────────────────
