@@ -719,7 +719,32 @@ app.get('/api/kitchen/health', requireAuth, async (req, res) => {
     res.json({ connected: false, reason: err.message });
   }
 });
+// Square diagnostic (no auth needed)
+app.get('/api/kitchen/diag', async (req, res) => {
+  const tokenLen = CONFIG.squareToken.length;
+  const tokenPreview = CONFIG.squareToken ? CONFIG.squareToken.substring(0, 6) + '...' + CONFIG.squareToken.substring(tokenLen - 4) : 'EMPTY';
+  const locId = CONFIG.squareLocId || 'NOT SET';
+  if (!CONFIG.squareToken) return res.json({ ok: false, tokenLen: 0, locId, reason: 'No token' });
+  try {
+    const locRes = await fetchWithTimeout(`${SQ_BASE}/locations`, {
+      headers: sqHeaders(),
+    }, 5000);
+    const status = locRes.status;
+    const data = await locRes.json();
+    if (data.errors) {
+      return res.json({ ok: false, httpStatus: status, tokenLen, tokenPreview, locId, squareError: data.errors[0]?.detail || data.errors[0]?.code, errors: data.errors });
+    }
+    const locations = (data.locations || []).map(l => ({ id: l.id, name: l.name }));
+    res.json({ ok: true, httpStatus: status, tokenLen, tokenPreview, locId, locations });
+  } catch(err) {
+    res.json({ ok: false, tokenLen, tokenPreview, locId, reason: err.message });
+  }
+});
+```
 
+Then click **Commit changes**. Wait for Railway to redeploy (~1 min), then visit:
+```
+https://magnificent-courtesy-production-63b2.up.railway.app/api/kitchen/diag
 // ─── Start server ─────────────────────────────────────────────────────────────
 app.listen(CONFIG.port, () => {
   console.log(`Palm CRM running on port ${CONFIG.port}`);
