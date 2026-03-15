@@ -85,8 +85,10 @@ app.get('/auth/me', (req, res) => {
   res.json({ name: session.name, role: session.role, username: session.username });
 });
 
-// ─── Serve static files (no redirect middleware — login handled client-side) ─
-app.use(express.static(path.join(__dirname)));
+// ─── Serve static files ─────────────────────────────────────────────────────
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.use(express.static(__dirname));
 
 // ─── MindBody token cache ─────────────────────────────────────────────────────
 let tokenCache = { token: null, expires: 0 };
