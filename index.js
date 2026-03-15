@@ -18,8 +18,8 @@ const CONFIG = {
   sendgridKey:    process.env.SENDGRID_API_KEY   || '',
   fromEmail:      process.env.FROM_EMAIL         || 'hello@palmsportingclub.com',
   fromName:       process.env.FROM_NAME          || 'Palm Sporting Club',
-  squareToken:    process.env.SQUARE_ACCESS_TOKEN || '',
-  squareLocId:    process.env.SQUARE_LOCATION_ID  || '',
+  squareToken:    (process.env.SQUARE_ACCESS_TOKEN || '').trim(),
+  squareLocId:    (process.env.SQUARE_LOCATION_ID  || '').trim(),
   port:           process.env.PORT               || 3000,
 };
 const MB_BASE = 'https://api.mindbodyonline.com/public/v6';
@@ -415,8 +415,12 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
   try {
     const mbToken = await getMBToken();
     const today = new Date().toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
-    const sixtyDaysAgo = new Date(Date.now() - 60*24*60*60*1000).toISOString().split('T')[0];
+    const range = req.query.range || '30d';
+    const now = new Date();
+    const rangeDays = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === 'ytd' ? Math.floor((now - new Date(now.getFullYear(),0,1)) / (24*60*60*1000)) : 30;
+    const startDate = new Date(Date.now() - rangeDays*24*60*60*1000).toISOString().split('T')[0];
+    const thirtyDaysAgo = startDate;
+    const sixtyDaysAgo = new Date(Date.now() - rangeDays*2*24*60*60*1000).toISOString().split('T')[0];
     const fourteenDaysAgo = new Date(Date.now() - 14*24*60*60*1000).toISOString().split('T')[0];
 
     const [clientsRes, classesRes, salesRes] = await Promise.all([
@@ -455,6 +459,7 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
 
     res.json({
       live: true,
+      range, rangeDays,
       totalClients: clients.length,
       activeClients: activeClients.length,
       newThisMonth: newThisMonth.length,
@@ -560,29 +565,49 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
   if (!CONFIG.squareToken) return res.json({ live: false, error: 'Square not configured' });
   try {
     const now = new Date();
-    const thirtyDaysAgo = new Date(now - 30*24*60*60*1000).toISOString();
-    const sevenDaysAgo = new Date(now - 7*24*60*60*1000).toISOString();
+    const range = req.query.range || '30d';
+    const rangeDays = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === 'ytd' ? Math.floor((now - new Date(now.getFullYear(),0,1)) / (24*60*60*1000)) : 30;
+    const startDate = new Date(now - rangeDays*24*60*60*1000).toISOString();
+    const prevStartDate = new Date(now - rangeDays*2*24*60*60*1000).toISOString();
+    const prevEndDate = new Date(now - rangeDays*24*60*60*1000).toISOString();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const locFilter = CONFIG.squareLocId ? [CONFIG.squareLocId] : undefined;
 
-    // Fetch orders (last 30 days)
-    const ordersRes = await fetchWithTimeout(`${SQ_BASE}/orders/search`, {
-      method: 'POST',
-      headers: sqHeaders(),
-      body: JSON.stringify({
-        location_ids: locFilter,
-        query: {
-          filter: {
-            date_time_filter: { created_at: { start_at: thirtyDaysAgo, end_at: now.toISOString() } },
-            state_filter: { states: ['COMPLETED'] }
-          },
-          sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' }
-        },
-        limit: 500,
-      }),
-    }, 8000);
+    // Fetch current + previous period orders in parallel
+    const [ordersRes, prevOrdersRes] = await Promise.all([
+      fetchWithTimeout(`${SQ_BASE}/orders/search`, {
+        method: 'POST',
+        headers: sqHeaders(),
+        body: JSON.stringify({
+          location_ids: locFilter,
+          query: { filter: { date_time_filter: { created_at: { start_at: startDate, end_at: now.toISOString() } }, state_filter: { states: ['COMPLETED'] } }, sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' } },
+          limit: 500,
+        }),
+      }, 10000),
+      fetchWithTimeout(`${SQ_BASE}/orders/search`, {
+        method: 'POST',
+        headers: sqHeaders(),
+        body: JSON.stringify({
+          location_ids: locFilter,
+          query: { filter: { date_time_filter: { created_at: { start_at: prevStartDate, end_at: prevEndDate } }, state_filter: { states: ['COMPLETED'] } } },
+          limit: 500,
+        }),
+      }, 10000),
+    ]);
+
     const ordersData = await ordersRes.json();
+    if (ordersData.errors) {
+      console.error('[kitchen] Square error:', JSON.stringify(ordersData.errors));
+      return res.status(ordersRes.status || 502).json({ live: false, error: ordersData.errors[0]?.detail || ordersData.errors[0]?.code || 'Square API error', errors: ordersData.errors });
+    }
+    const prevData = await prevOrdersRes.json();
     const orders = ordersData.orders || [];
+    const prevOrders = prevData.orders || [];
+
+    // Previous period metrics for comparison
+    const prevRevenue = prevOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+    const prevOrderCount = prevOrders.length;
+    const prevAvgOrder = prevOrderCount > 0 ? Math.round(prevRevenue / prevOrderCount * 100) / 100 : 0;
 
     // Fetch catalog items for names
     let catalogItems = {};
@@ -658,32 +683,34 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       return a + disc;
     }, 0);
 
-    // Daily revenue (last 7 days)
+    // Daily revenue (dynamic: show last N days based on range, max 14 bars)
     const dailyRevenue = [];
-    for (let i = 6; i >= 0; i--) {
+    const dailyDays = Math.min(rangeDays, 14);
+    for (let i = dailyDays - 1; i >= 0; i--) {
       const dStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
       const dEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i + 1);
-      const dOrders = orders.filter(o => {
-        const d = new Date(o.created_at);
-        return d >= dStart && d < dEnd;
-      });
+      const dOrders = orders.filter(o => { const d = new Date(o.created_at); return d >= dStart && d < dEnd; });
       const dRev = dOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
       const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      dailyRevenue.push({ label: dayNames[dStart.getDay()], amount: Math.round(dRev*100)/100, orders: dOrders.length });
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const label = dailyDays <= 7 ? dayNames[dStart.getDay()] : `${monthNames[dStart.getMonth()]} ${dStart.getDate()}`;
+      dailyRevenue.push({ label, amount: Math.round(dRev*100)/100, orders: dOrders.length, date: dStart.toISOString().split('T')[0] });
     }
 
     // Customer frequency (unique customers)
     const customerOrders = {};
-    orders.forEach(o => {
-      if (o.customer_id) {
-        customerOrders[o.customer_id] = (customerOrders[o.customer_id] || 0) + 1;
-      }
-    });
+    orders.forEach(o => { if (o.customer_id) customerOrders[o.customer_id] = (customerOrders[o.customer_id] || 0) + 1; });
     const uniqueCustomers = Object.keys(customerOrders).length;
     const repeatCustomers = Object.values(customerOrders).filter(c => c > 1).length;
 
+    // Revenue growth vs previous period
+    const revGrowth = prevRevenue > 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100) : 0;
+    const orderGrowth = prevOrderCount > 0 ? Math.round(((totalOrders - prevOrderCount) / prevOrderCount) * 100) : 0;
+    const avgGrowth = prevAvgOrder > 0 ? Math.round(((avgOrderValue - prevAvgOrder) / prevAvgOrder) * 100) : 0;
+
     res.json({
       live: true,
+      range, rangeDays,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       todayRevenue: Math.round(todayRevenue * 100) / 100,
       totalOrders,
@@ -698,6 +725,11 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       repeatCustomers,
       repeatRate: uniqueCustomers > 0 ? Math.round((repeatCustomers / uniqueCustomers) * 100) : 0,
       currency: orders[0]?.total_money?.currency || 'EUR',
+      // Comparison data
+      prevRevenue: Math.round(prevRevenue * 100) / 100,
+      prevOrders: prevOrderCount,
+      prevAvgOrder,
+      revGrowth, orderGrowth, avgGrowth,
     });
   } catch (err) {
     console.error('[kitchen]', err.message);
@@ -713,10 +745,35 @@ app.get('/api/kitchen/health', requireAuth, async (req, res) => {
       headers: sqHeaders(),
     }, 5000);
     const data = await locRes.json();
+    if (data.errors) {
+      return res.json({ connected: false, reason: data.errors[0]?.detail || data.errors[0]?.code || 'Unknown Square error', errors: data.errors });
+    }
     const locations = data.locations || [];
     res.json({ connected: true, locations: locations.map(l => ({ id: l.id, name: l.name, status: l.status })) });
   } catch(err) {
     res.json({ connected: false, reason: err.message });
+  }
+});
+
+// Square diagnostic (no auth, safe — only returns connection status, no data)
+app.get('/api/kitchen/diag', async (req, res) => {
+  const tokenLen = CONFIG.squareToken.length;
+  const tokenPreview = CONFIG.squareToken ? CONFIG.squareToken.substring(0, 6) + '...' + CONFIG.squareToken.substring(tokenLen - 4) : 'EMPTY';
+  const locId = CONFIG.squareLocId || 'NOT SET';
+  if (!CONFIG.squareToken) return res.json({ ok: false, tokenLen: 0, locId, reason: 'No token' });
+  try {
+    const locRes = await fetchWithTimeout(`${SQ_BASE}/locations`, {
+      headers: sqHeaders(),
+    }, 5000);
+    const status = locRes.status;
+    const data = await locRes.json();
+    if (data.errors) {
+      return res.json({ ok: false, httpStatus: status, tokenLen, tokenPreview, locId, squareError: data.errors[0]?.detail || data.errors[0]?.code, errors: data.errors });
+    }
+    const locations = (data.locations || []).map(l => ({ id: l.id, name: l.name }));
+    res.json({ ok: true, httpStatus: status, tokenLen, tokenPreview, locId, locations });
+  } catch(err) {
+    res.json({ ok: false, tokenLen, tokenPreview, locId, reason: err.message });
   }
 });
 
