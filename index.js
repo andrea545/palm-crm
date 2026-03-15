@@ -3,11 +3,9 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const path = require('path');
-
 const app = express();
 app.use(cors());
 app.use(express.json());
-
 // ─── Config ──────────────────────────────────────────────────────────────────
 const CONFIG = {
   apiKey:         process.env.MB_API_KEY         || '991c7812b5c7430a828e0d3dec2cb485',
@@ -22,19 +20,15 @@ const CONFIG = {
   fromName:       process.env.FROM_NAME          || 'Palm Sporting Club',
   port:           process.env.PORT               || 3000,
 };
-
 const MB_BASE = 'https://api.mindbodyonline.com/public/v6';
-
 // ─── Users ───────────────────────────────────────────────────────────────────
 // Password: Hello999
 const USERS = [
   { username: 'andrea', passwordHash: '96fbec87108641aebc24db0e94a859442b648e194d37f360cd8ae50a9e2236cc', role: 'owner', name: 'Andrea' },
   { username: 'staff1', passwordHash: '96fbec87108641aebc24db0e94a859442b648e194d37f360cd8ae50a9e2236cc', role: 'staff', name: 'Staff Member' },
 ];
-
 // ─── Sessions ────────────────────────────────────────────────────────────────
 const sessions = new Map();
-
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, {
@@ -43,7 +37,6 @@ function createSession(user) {
   });
   return token;
 }
-
 function getSession(token) {
   if (!token) return null;
   const s = sessions.get(token);
@@ -51,7 +44,6 @@ function getSession(token) {
   if (Date.now() > s.expiresAt) { sessions.delete(token); return null; }
   return s;
 }
-
 function requireAuth(req, res, next) {
   const token = req.headers['x-session-token'] || req.query._token;
   const session = getSession(token);
@@ -59,7 +51,6 @@ function requireAuth(req, res, next) {
   req.session = session;
   next();
 }
-
 // ─── Auth routes ─────────────────────────────────────────────────────────────
 app.post('/auth/login', (req, res) => {
   const { username, password } = req.body;
@@ -71,20 +62,17 @@ app.post('/auth/login', (req, res) => {
   const token = createSession(user);
   res.json({ token, name: user.name, role: user.role, username: user.username });
 });
-
 app.post('/auth/logout', (req, res) => {
   const token = req.headers['x-session-token'];
   if (token) sessions.delete(token);
   res.json({ ok: true });
 });
-
 app.get('/auth/me', (req, res) => {
   const token = req.headers['x-session-token'];
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
   res.json({ name: session.name, role: session.role, username: session.username });
 });
-
 // ─── Serve static files with cache-busting headers ──────────────────────────
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -95,10 +83,8 @@ app.use((req, res, next) => {
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.use(express.static(__dirname));
-
 // ─── MindBody token cache ─────────────────────────────────────────────────────
 let tokenCache = { token: null, expires: 0 };
-
 async function fetchWithTimeout(url, options, ms=5000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), ms);
@@ -111,7 +97,6 @@ async function fetchWithTimeout(url, options, ms=5000) {
     throw e;
   }
 }
-
 async function getMBToken() {
   if (tokenCache.token && Date.now() < tokenCache.expires) return tokenCache.token;
   const res = await fetchWithTimeout(`${MB_BASE}/usertoken/issue`, {
@@ -124,7 +109,6 @@ async function getMBToken() {
   tokenCache = { token: data.AccessToken, expires: Date.now() + 55 * 60 * 1000 };
   return tokenCache.token;
 }
-
 // ─── MindBody proxy ───────────────────────────────────────────────────────────
 app.all('/api/mb/*', requireAuth, async (req, res) => {
   try {
@@ -143,7 +127,6 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
     res.status(502).json({ error: err.message });
   }
 });
-
 // ─── Email sending via SendGrid ───────────────────────────────────────────────
 async function sendEmail({ to, toName, subject, html }) {
   if (!CONFIG.sendgridKey) {
@@ -168,29 +151,20 @@ async function sendEmail({ to, toName, subject, html }) {
   console.log(`[email] Sent to ${to}: ${subject}`);
   return { ok: true };
 }
-
-// ─── Email templates ──────────────────────────────────────────────────────────
+// ─── Email templates ─────────────────────────────────────────────────────────
 function emailWrapper(content) {
   return `<!DOCTYPE html><html><body style="font-family:Georgia,'Times New Roman',serif;background:#E8E5DC;margin:0;padding:30px 20px;">
 <div style="max-width:580px;margin:0 auto;">
-
-  <!-- Logo header -->
   <div style="text-align:center;padding:32px 0 24px;">
     <img src="https://images.squarespace-cdn.com/content/v1/65d13efed52d4e7d3ecca2ad/5001e330-ad2f-4883-809e-a6149e75c82b/Untitled+design+%282%29.png?format=400w" alt="Palm Sporting Club" style="width:140px;height:auto;" />
   </div>
-
-  <!-- Email body -->
   <div style="background:#fff;border-radius:12px;padding:36px 40px;border:1px solid #D6D3C8;">
     ${content}
-
-    <!-- Sign off -->
     <div style="margin-top:32px;padding-top:20px;border-top:1px solid #E8E5DC;font-size:14px;color:#4A4A4A;line-height:1.8;">
       See you soon,<br>
       <span style="font-weight:600;color:#0D3D20;">PSC Team</span>
     </div>
   </div>
-
-  <!-- Footer -->
   <div style="text-align:center;padding:20px 0;font-size:11px;color:#8C8A82;font-family:-apple-system,sans-serif;">
     Palm Sporting Club · Oasis Business Center, Marbella<br>
     <a href="https://www.palmsportingclub.com" style="color:#0D3D20;">palmsportingclub.com</a> &nbsp;·&nbsp;
@@ -200,12 +174,9 @@ function emailWrapper(content) {
 </div>
 </body></html>`;
 }
-
 const EMAIL_TEMPLATES = {
-
-  // Email 1: Intro pack complete → discount on 5/10 class pack
   introPackComplete: (name) => ({
-    subject: `You crushed your intro pack — here's what's next 🌴`,
+    subject: `You crushed your intro pack — here's what's next`,
     html: emailWrapper(`
       <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">Amazing work, ${name}!</h2>
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You've just completed all 3 classes in your intro pack — you're officially part of the Palm community!</p>
@@ -219,10 +190,8 @@ const EMAIL_TEMPLATES = {
       <p style="font-size:12px;color:#9CA3AF;text-align:center;">Use code PALM10 at checkout. One use per client.</p>
     `)
   }),
-
-  // Email 2: 2nd 10-class pack purchase → membership upsell
   membershipUpsell: (name) => ({
-    subject: `You keep coming back — have you considered a membership? 💚`,
+    subject: `You keep coming back — have you considered a membership?`,
     html: emailWrapper(`
       <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">You're a regular, ${name}!</h2>
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You've now bought two 10-class packs — you're clearly hooked on Lagree (we don't blame you!).</p>
@@ -240,10 +209,8 @@ const EMAIL_TEMPLATES = {
       <p style="font-size:13px;color:#6B7280;text-align:center;">Questions? Reply to this email or WhatsApp us at +34 687 28 29 94</p>
     `)
   }),
-
-  // Email 3: Last credit used → top up now
   lastCredit: (name) => ({
-    subject: `That was your last credit — don't lose your momentum 🌴`,
+    subject: `That was your last credit — don't lose your momentum`,
     html: emailWrapper(`
       <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">Time to top up, ${name}!</h2>
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You just used your last class credit — great work staying consistent!</p>
@@ -255,10 +222,8 @@ const EMAIL_TEMPLATES = {
       <p style="font-size:13px;color:#6B7280;text-align:center;">Book directly from the <a href="https://mndbdy.ly/e/5737970" style="color:#0D3D20;">Palm app</a> too.</p>
     `)
   }),
-
-  // Email 4: New client welcome → intro offer with purchase link
   welcome: (name) => ({
-    subject: `Welcome to Palm Sporting Club, ${name}! 🌴`,
+    subject: `Welcome to Palm Sporting Club, ${name}!`,
     html: emailWrapper(`
       <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">Welcome, ${name}!</h2>
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">We're so excited to have you join the Palm Sporting Club community in Marbella. You're about to discover why Lagree has become the most talked-about workout in the world.</p>
@@ -279,14 +244,11 @@ const EMAIL_TEMPLATES = {
     `)
   }),
 };
-
 // ─── Automation logic ─────────────────────────────────────────────────────────
 async function handleAutomations(event) {
   const type = event.type;
   const payload = event.payload;
-
   try {
-    // Email 4: New client created → send welcome + intro offer
     if (type === 'client.created') {
       const name = payload.firstName || payload.FirstName || 'there';
       const email = payload.email || payload.Email;
@@ -296,14 +258,10 @@ async function handleAutomations(event) {
         console.log(`[automation] Welcome email sent to ${email}`);
       }
     }
-
-    // Email 1 + 3: Visit created → check credits remaining
     if (type === 'clientVisit.created' || type === 'class.checkin') {
       const clientId = payload.clientId || payload.ClientId;
       const siteId = CONFIG.siteId;
       if (!clientId) return;
-
-      // Get client info and services
       const mbToken = await getMBToken();
       const [clientRes, servicesRes] = await Promise.all([
         fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
@@ -313,32 +271,23 @@ async function handleAutomations(event) {
           headers: { 'API-Key': CONFIG.apiKey, 'SiteId': siteId, 'Authorization': mbToken }
         }),
       ]);
-
       const clientData = await clientRes.json();
       const servicesData = await servicesRes.json();
-
       const client = (clientData.Clients || [])[0];
       const services = servicesData.ClientServices || [];
       if (!client) return;
-
       const name = client.FirstName || 'there';
       const email = client.Email;
       if (!email) return;
-
-      // Check each active service
       for (const svc of services) {
         const remaining = svc.Remaining || 0;
         const total = svc.Count || 0;
         const svcName = (svc.Name || '').toLowerCase();
-
-        // Email 1: Intro pack — last class used (remaining = 0, total = 3)
         if (remaining === 0 && total <= 3 && svcName.includes('intro')) {
           const tpl = EMAIL_TEMPLATES.introPackComplete(name);
           await sendEmail({ to: email, toName: name, ...tpl });
           console.log(`[automation] Intro pack complete email sent to ${email}`);
         }
-
-        // Email 3: Any class pack — last credit used (remaining = 0, not intro, not membership)
         if (remaining === 0 && total > 3 && !svcName.includes('intro') && !svcName.includes('unlimited') && !svcName.includes('membership')) {
           const tpl = EMAIL_TEMPLATES.lastCredit(name);
           await sendEmail({ to: email, toName: name, ...tpl });
@@ -346,26 +295,19 @@ async function handleAutomations(event) {
         }
       }
     }
-
-    // Email 2: Purchase created → check if 2nd 10-class pack
     if (type === 'clientPurchase.created' || type === 'sale.created') {
       const clientId = payload.clientId || payload.ClientId;
       const itemName = (payload.itemName || payload.Description || '').toLowerCase();
       if (!clientId || !itemName.includes('10')) return;
-
       const mbToken = await getMBToken();
-      // Get purchase history to count 10-class pack purchases
       const salesRes = await fetch(`${MB_BASE}/sale/sales?clientId=${clientId}`, {
         headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
       });
       const salesData = await salesRes.json();
       const sales = salesData.Sales || [];
-
-      // Count how many times they've bought a 10-class pack
       const tenPackCount = sales.filter(s =>
         (s.Description || '').toLowerCase().includes('10')
       ).length;
-
       if (tenPackCount === 2) {
         const clientRes = await fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
           headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
@@ -379,16 +321,13 @@ async function handleAutomations(event) {
         }
       }
     }
-
   } catch (err) {
     console.error('[automation] Error:', err.message);
   }
 }
-
 // ─── Webhook receiver ─────────────────────────────────────────────────────────
 const events = [];
 const sseClients = new Set();
-
 app.post('/webhooks/mindbody', (req, res) => {
   const event = {
     id: crypto.randomUUID(),
@@ -403,7 +342,6 @@ app.post('/webhooks/mindbody', (req, res) => {
   handleAutomations(event);
   res.status(200).json({ received: true, id: event.id });
 });
-
 // ─── SSE ─────────────────────────────────────────────────────────────────────
 app.get('/api/events', requireAuth, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -414,20 +352,16 @@ app.get('/api/events', requireAuth, (req, res) => {
   sseClients.add(res);
   req.on('close', () => sseClients.delete(res));
 });
-
 function broadcast(event) {
   sseClients.forEach(c => c.write(`data: ${JSON.stringify(event)}\n\n`));
 }
-
 app.get('/api/events/log', requireAuth, (req, res) => {
   res.json({ events: events.slice(0, 50), total: events.length });
 });
-
 // ─── Health ───────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', siteId: CONFIG.siteId, source: CONFIG.sourceName, sseClients: sseClients.size, eventsReceived: events.length, tokenCached: !!tokenCache.token });
 });
-
 // ─── Test email endpoint ──────────────────────────────────────────────────────
 app.post('/api/test-email', requireAuth, async (req, res) => {
   const { type, email, name } = req.body;
@@ -437,18 +371,10 @@ app.post('/api/test-email', requireAuth, async (req, res) => {
   const result = await sendEmail({ to: email, toName: name, ...tpl(name) });
   res.json(result);
 });
-
-app.listen(CONFIG.port, () => {
-  console.log(`🌴 Palm CRM running on port ${CONFIG.port}`);
-  console.log(`   Auth: username=andrea password=Hello999`);
-  console.log(`   Automations: 4 email triggers active`);
-});
-
 // ─── Manual email send endpoint ───────────────────────────────────────────────
 app.post('/api/send-email', requireAuth, async (req, res) => {
   const { audience, subject, body } = req.body;
   if (!subject || !body) return res.status(400).json({ error: 'Subject and body required' });
-
   try {
     const mbToken = await getMBToken();
     const clientsRes = await fetch(`${MB_BASE}/client/clients?Limit=200`, {
@@ -456,8 +382,6 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
     });
     const clientsData = await clientsRes.json();
     let clients = clientsData.Clients || [];
-
-    // Filter by audience
     if (audience === 'lapsed') {
       const cutoff = Date.now() - 21 * 24 * 60 * 60 * 1000;
       clients = clients.filter(c => c.LastModifiedDateTime && new Date(c.LastModifiedDateTime) < cutoff);
@@ -465,12 +389,8 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
       const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
       clients = clients.filter(c => c.CreationDate && new Date(c.CreationDate) > cutoff);
     }
-
     clients = clients.filter(c => c.Email && c.Active !== false);
-
     if (clients.length === 0) return res.json({ ok: true, count: 0 });
-
-    // Send to each client
     let sent = 0;
     for (const client of clients.slice(0, 100)) {
       const personalised = body.replace(/\[Name\]/g, client.FirstName || 'there');
@@ -482,10 +402,129 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
       });
       if (result.ok) sent++;
     }
-
     res.json({ ok: true, count: sent });
   } catch (err) {
     console.error('[send-email]', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+// ─── Analytics API endpoints ──────────────────────────────────────────────────
+app.get('/api/analytics/overview', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+    const sixtyDaysAgo = new Date(Date.now() - 60*24*60*60*1000).toISOString().split('T')[0];
+    const fourteenDaysAgo = new Date(Date.now() - 14*24*60*60*1000).toISOString().split('T')[0];
+
+    const [clientsRes, classesRes, salesRes] = await Promise.all([
+      fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, {
+        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+      }, 5000),
+      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${thirtyDaysAgo}T00:00:00&EndDateTime=${today}T23:59:59&Limit=200`, {
+        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+      }, 5000),
+      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${thirtyDaysAgo}T00:00:00&EndSaleDateTime=${today}T23:59:59`, {
+        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+      }, 5000),
+    ]);
+
+    const clients = (await clientsRes.json()).Clients || [];
+    const classes = (await classesRes.json()).Classes || [];
+    const sales = (await salesRes.json()).Sales || [];
+
+    // Calculate metrics
+    const activeClients = clients.filter(c => c.Active !== false);
+    const newThisMonth = clients.filter(c => c.CreationDate && new Date(c.CreationDate) > new Date(thirtyDaysAgo));
+    const totalBooked = classes.reduce((a, c) => a + (c.TotalBooked || 0), 0);
+    const totalCapacity = classes.reduce((a, c) => a + (c.MaxCapacity || 10), 0);
+    const avgFillRate = totalCapacity > 0 ? Math.round((totalBooked / totalCapacity) * 100) : 0;
+
+    // Revenue from sales
+    const totalRevenue = sales.reduce((a, s) => a + (s.TotalAmount || s.Amount || 0), 0);
+
+    // At-risk clients (no recent activity)
+    const atRisk = clients.filter(c => {
+      if (!c.Active) return false;
+      const lastVisit = c.LastModifiedDateTime || c.CreationDate;
+      if (!lastVisit) return true;
+      return new Date(lastVisit) < new Date(fourteenDaysAgo);
+    });
+
+    res.json({
+      live: true,
+      totalClients: clients.length,
+      activeClients: activeClients.length,
+      newThisMonth: newThisMonth.length,
+      classesThisMonth: classes.length,
+      totalBooked,
+      avgFillRate,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      atRiskCount: atRisk.length,
+      atRiskClients: atRisk.slice(0, 10).map(c => ({
+        name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
+        email: c.Email,
+        lastSeen: c.LastModifiedDateTime || c.CreationDate || 'Unknown',
+        visits: c.VisitCount || 0,
+      })),
+      classes: classes.map(c => ({
+        name: c.ClassDescription?.Name || 'Class',
+        date: c.StartDateTime,
+        booked: c.TotalBooked || 0,
+        capacity: c.MaxCapacity || 10,
+        instructor: c.Staff?.DisplayName || 'Staff',
+      })),
+      sales: sales.map(s => ({
+        date: s.SaleDate || s.PurchaseDate,
+        amount: s.TotalAmount || s.Amount || 0,
+        description: s.Description || 'Sale',
+        client: s.ClientId,
+      })),
+    });
+  } catch (err) {
+    console.error('[analytics]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+app.get('/api/analytics/retention', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const today = new Date().toISOString().split('T')[0];
+    const ninetyDaysAgo = new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0];
+
+    const clientsRes = await fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, {
+      headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+    }, 5000);
+    const clients = (await clientsRes.json()).Clients || [];
+    const active = clients.filter(c => c.Active !== false);
+    const total = clients.length;
+    const retentionRate = total > 0 ? Math.round((active.length / total) * 100) : 0;
+
+    // Churn = clients who became inactive recently
+    const churned = clients.filter(c => {
+      if (c.Active !== false) return false;
+      const last = c.LastModifiedDateTime;
+      return last && new Date(last) > new Date(ninetyDaysAgo);
+    });
+
+    res.json({
+      live: true,
+      retentionRate,
+      activeClients: active.length,
+      totalClients: total,
+      churnedCount: churned.length,
+      churnRate: total > 0 ? Math.round((churned.length / total) * 100) : 0,
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// ─── Start server ─────────────────────────────────────────────────────────────
+app.listen(CONFIG.port, () => {
+  console.log(`Palm CRM running on port ${CONFIG.port}`);
+  console.log(`   Auth: username=andrea password=Hello999`);
+  console.log(`   Automations: 4 email triggers active`);
+  console.log(`   Analytics: /api/analytics/overview, /api/analytics/retention`);
 });
