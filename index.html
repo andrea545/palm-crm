@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palm Sporting Club — CRM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#FAF9F7;color:#111827;font-size:14px;}
+.app{display:flex;height:100vh;overflow:hidden;}
+
+/* Sidebar */
+.sidebar{width:200px;flex-shrink:0;background:#fff;border-right:1px solid #E5E7EB;display:flex;flex-direction:column;}
+.logo{padding:16px;border-bottom:1px solid #E5E7EB;}
+.logo-name{font-weight:600;font-size:14px;color:#111827;}
+.logo-sub{font-size:11px;color:#6B7280;margin-top:2px;}
+.nav{padding:8px 0;flex:1;}
+.ni{display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:13px;color:#6B7280;cursor:pointer;border-left:2px solid transparent;transition:all .1s;}
+.ni:hover{background:#F9FAFB;color:#111827;}
+.ni.active{background:#F0FDF4;color:#166534;font-weight:500;border-left-color:#16A34A;}
+.ni svg{width:15px;height:15px;flex-shrink:0;}
+.sync{padding:10px 14px;border-top:1px solid #E5E7EB;}
+.sync-row{display:flex;align-items:center;gap:6px;font-size:11px;}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.dot-g{background:#16A34A;} .dot-r{background:#DC2626;} .dot-y{background:#D97706;}
+
+/* Topbar */
+.topbar{padding:12px 20px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;background:#fff;}
+.topbar h1{font-size:16px;font-weight:600;}
+.actions{display:flex;gap:8px;}
+.btn{padding:6px 14px;border-radius:7px;font-size:13px;cursor:pointer;border:1px solid #D1D5DB;background:#fff;color:#374151;transition:all .1s;}
+.btn:hover{background:#F9FAFB;}
+.btn-g{background:#16A34A;color:#fff;border-color:#16A34A;}
+.btn-g:hover{background:#15803D;}
+
+/* Content */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.content{flex:1;overflow:auto;padding:20px;}
+.page{display:none;}.page.on{display:block;}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+.stat{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;}
+.stat-l{font-size:11px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.stat-v{font-size:22px;font-weight:600;}
+.stat-d{font-size:11px;color:#16A34A;margin-top:2px;}
+.stat-w{color:#D97706;}
+
+/* Grid */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}
+.card{background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:14px 16px;}
+.card-t{font-size:11px;font-weight:600;color:#9CA3AF;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
+
+/* Rows */
+.row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #F3F4F6;}
+.row:last-child{border-bottom:none;}
+.cdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.ri{flex:1;min-width:0;}
+.rn{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rm{font-size:11px;color:#6B7280;margin-top:1px;}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:5px;font-weight:500;}
+.b-g{background:#DCFCE7;color:#166534;} .b-a{background:#FEF3C7;color:#92400E;}
+.b-b{background:#DBEAFE;color:#1E40AF;} .b-r{background:#FEE2E2;color:#991B1B;}
+.av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;}
+
+/* Loading */
+.loading{display:flex;align-items:center;gap:10px;padding:24px;color:#6B7280;font-size:13px;}
+.spin{width:18px;height:18px;border:2px solid #E5E7EB;border-top-color:#16A34A;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.err-box{background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:10px 12px;font-size:12px;color:#991B1B;margin-bottom:12px;}
+.ok-box{background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:10px 12px;font-size:12px;color:#166534;margin-bottom:12px;}
+
+/* Webhook panel */
+.webhook-feed{background:#111827;border-radius:12px;padding:14px;font-family:monospace;font-size:12px;color:#D1FAE5;max-height:320px;overflow-y:auto;}
+.wh-item{padding:6px 0;border-bottom:1px solid #1F2937;}
+.wh-item:last-child{border-bottom:none;}
+.wh-type{color:#34D399;font-weight:600;}
+.wh-time{color:#6B7280;font-size:11px;margin-left:8px;}
+.wh-data{color:#9CA3AF;font-size:11px;margin-top:2px;}
+.wh-empty{color:#4B5563;padding:8px 0;}
+.pulse{animation:pulse 1.5s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+
+/* Schedule */
+.sched-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;}
+.day-h{font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;margin-bottom:6px;}
+.cb{padding:7px 8px;border-radius:8px;margin-bottom:5px;font-size:11px;cursor:pointer;border:1px solid transparent;}
+.cb-l{background:#DCFCE7;border-color:#86EFAC;color:#166534;}
+.cb-m{background:#DBEAFE;border-color:#93C5FD;color:#1E40AF;}
+.cb-t{font-family:monospace;font-size:9px;opacity:.7;display:block;}
+.cb-n{font-weight:600;font-size:11px;display:block;margin-top:1px;}
+.cb-s{font-size:10px;display:block;margin-top:3px;opacity:.7;}
+
+/* Clients */
+.srch{width:100%;padding:8px 12px;font-size:13px;border:1px solid #D1D5DB;border-radius:8px;background:#fff;color:#111827;margin-bottom:12px;}
+.srch:focus{outline:none;border-color:#16A34A;}
+.tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.tbl th{text-align:left;padding:6px 10px;color:#6B7280;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;}
+.tbl td{padding:8px 10px;border-bottom:1px solid #F3F4F6;}
+.tbl tr:hover td{background:#F9FAFB;}
+
+/* Attendance bars */
+.ab-wrap{margin-bottom:10px;}
+.ab-lbl{display:flex;justify-content:space-between;font-size:12px;color:#374151;margin-bottom:3px;}
+.ab-track{height:6px;border-radius:3px;background:#F3F4F6;}
+.ab-fill{height:100%;border-radius:3px;transition:width .6s;}
+
+/* Email */
+.ei{display:flex;gap:10px;padding:10px 12px;border-radius:10px;margin-bottom:6px;border:1px solid #E5E7EB;background:#fff;cursor:pointer;}
+.ei:hover{background:#F9FAFB;}
+.ei-ico{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;}
+.ei-sub{font-size:13px;font-weight:500;}
+.ei-pre{font-size:11px;color:#6B7280;margin-top:2px;}
+.ei-meta{font-size:11px;color:#9CA3AF;margin-top:3px;}
+.compose{background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:16px;margin-bottom:14px;}
+.fl{margin-bottom:10px;}
+.fl label{font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px;}
+.fl input,.fl select,.fl textarea{width:100%;padding:7px 10px;font-size:13px;border:1px solid #D1D5DB;border-radius:7px;background:#fff;color:#111827;}
+.fl textarea{resize:vertical;min-height:90px;}
+.fl input:focus,.fl select:focus,.fl textarea:focus{outline:none;border-color:#16A34A;}
+
+/* Live indicator */
+.live-badge{display:inline-flex;align-items:center;gap:5px;background:#DCFCE7;color:#166534;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;}
+.live-badge .dot{width:6px;height:6px;background:#16A34A;}
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="sidebar">
+  <div class="logo">
+    <div class="logo-name">Palm Sporting Club</div>
+    <div class="logo-sub">Marbella · Lagree CRM</div>
+  </div>
+  <div class="nav">
+    <div class="ni active" onclick="nav('dash',this)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h5a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zm9-1a1 1 0 00-1 1v2a1 1 0 001 1h4a1 1 0 001-1v-2a1 1 0 00-1-1h-4z"/></svg>
+      Dashboard
+    </div>
+    <div class="ni" onclick="nav('schedule',this)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zm6-6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zm0 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+      Schedule
+    </div>
+    <div class="ni" onclick="nav('clients',this)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zm8 0a3 3 0 11-6 0 3 3 0 016 0zM3 15a6 6 0 0112 0H3zm14-2a4 4 0 00-4-4 6 6 0 014 4z"/></svg>
+      Clients
+    </div>
+    <div class="ni" onclick="nav('attendance',this)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+      Attendance
+    </div>
+    <div class="ni" onclick="nav('webhooks',this)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/></svg>
+      Live events
+    </div>
+    <div class="ni" onclick="nav('emails',this)">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>
+      Emails
+    </div>
+  </div>
+  <div class="sync">
+    <div class="sync-row">
+      <div class="dot dot-y" id="sync-dot"></div>
+      <span id="sync-txt" style="color:#6B7280;font-size:11px;">Connecting...</span>
+    </div>
+    <div style="font-size:10px;color:#9CA3AF;margin-top:3px;" id="sync-sub">MindBody API proxy</div>
+  </div>
+  <div style="padding:10px 14px;border-top:1px solid #E5E7EB;">
+    <div id="user-info" style="margin-bottom:7px;"></div>
+    <button onclick="logout()" style="width:100%;padding:5px 10px;font-size:11px;border:1px solid #E5E7EB;border-radius:7px;background:#fff;color:#6B7280;cursor:pointer;">Sign out</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="page-title">Dashboard</h1>
+    <div class="actions">
+      <div class="live-badge" id="sse-status"><div class="dot pulse"></div>Live</div>
+      <button class="btn btn-g" onclick="nav('emails',document.querySelectorAll('.ni')[5])">+ New email</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div id="page-dash" class="page on">
+      <div id="dash-load" class="loading"><div class="spin"></div>Fetching data via proxy...</div>
+      <div id="dash-err" class="err-box" style="display:none;"></div>
+      <div id="dash-ok" class="ok-box" style="display:none;"></div>
+      <div id="dash-body" style="display:none;">
+        <div class="stats" id="stat-cards"></div>
+        <div class="g2">
+          <div class="card"><div class="card-t">Today's classes</div><div id="today-cls"></div></div>
+          <div class="card"><div class="card-t">Recent clients</div><div id="recent-cts"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-t">Auto-email queue</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;" id="eq"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE -->
+    <div id="page-schedule" class="page">
+      <div id="sched-load" class="loading"><div class="spin"></div>Loading schedule...</div>
+      <div id="sched-err" class="err-box" style="display:none;"></div>
+      <div id="sched-body" style="display:none;"><div class="sched-grid" id="sched-grid"></div></div>
+    </div>
+
+    <!-- CLIENTS -->
+    <div id="page-clients" class="page">
+      <input class="srch" id="csrch" placeholder="Search by name or email..." oninput="filterClients(this.value)"/>
+      <div id="clients-load" class="loading"><div class="spin"></div>Loading clients...</div>
+      <div id="clients-err" class="err-box" style="display:none;"></div>
+      <div id="clients-body" style="display:none;">
+        <div class="card" style="padding:0;overflow:hidden;">
+          <table class="tbl">
+            <thead><tr><th>Client</th><th>Active</th><th>Phone</th><th>Visits</th><th>Status</th></tr></thead>
+            <tbody id="client-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ATTENDANCE -->
+    <div id="page-attendance" class="page">
+      <div id="att-load" class="loading"><div class="spin"></div>Loading attendance...</div>
+      <div id="att-err" class="err-box" style="display:none;"></div>
+      <div id="att-body" style="display:none;">
+        <div class="stats" style="grid-template-columns:repeat(3,1fr);" id="att-stats"></div>
+        <div class="g2">
+          <div class="card"><div class="card-t">Fill rates by class</div><div id="fill-rates"></div></div>
+          <div class="card"><div class="card-t">Recent check-ins <span class="badge b-g" id="ci-count"></span></div><div id="checkins"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE WEBHOOK EVENTS -->
+    <div id="page-webhooks" class="page">
+      <div class="g2">
+        <div class="card">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Live event feed
+            <span class="live-badge"><div class="dot pulse"></div>SSE connected</span>
+          </div>
+          <div class="webhook-feed" id="wh-feed">
+            <div class="wh-empty">Waiting for events from MindBody...</div>
+          </div>
+        </div>
+        <div>
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-t">Webhook setup</div>
+            <div style="font-size:12px;color:#374151;line-height:1.7;">
+              <p style="margin-bottom:8px;">Register this URL in your MindBody Developer Portal under <strong>Webhooks</strong>:</p>
+              <div style="background:#F3F4F6;border-radius:7px;padding:8px 10px;font-family:monospace;font-size:12px;color:#111827;word-break:break-all;" id="webhook-url">
+                http://localhost:3000/webhooks/mindbody
+              </div>
+              <p style="margin-top:8px;color:#6B7280;font-size:11px;">Replace with your hosted domain once deployed to Railway/Render.</p>
+              <div style="margin-top:12px;">
+                <div style="font-size:11px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Subscribe to these events:</div>
+                <div id="webhook-events"></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-t">Test webhook</div>
+            <p style="font-size:12px;color:#6B7280;margin-bottom:10px;">Send a simulated check-in event to test your setup:</p>
+            <button class="btn btn-g" onclick="testWebhook()" style="width:100%;">Send test check-in event</button>
+            <div id="test-result" style="margin-top:8px;font-size:12px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EMAILS -->
+    <div id="page-emails" class="page">
+      <div class="compose" id="compose">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Compose email</div>
+        <div class="fl"><label>Audience</label>
+          <select id="ea">
+            <option>All active clients</option>
+            <option>Lapsed 21+ days (win-back)</option>
+            <option>New clients this month</option>
+            <option>Membership expiring soon</option>
+            <option>ClassPass bookings only</option>
+            <option>Intro Lagree clients</option>
+          </select>
+        </div>
+        <div class="fl"><label>Subject</label><input placeholder="e.g. We miss you at Palm!" id="esubj"/></div>
+        <div class="fl"><label>Message</label><textarea placeholder="Your message..." id="ebody"></textarea></div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn btn-g">Send now</button>
+          <button class="btn">Schedule</button>
+        </div>
+      </div>
+      <div id="email-list"></div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+const token = localStorage.getItem('palm_crm_token');
+const user  = JSON.parse(localStorage.getItem('palm_crm_user') || '{}');
+if (!token) { window.location.href = '/login'; }
+
+// Show user info + logout in sidebar
+document.addEventListener('DOMContentLoaded', () => {
+  const userEl = document.getElementById('user-info');
+  if (userEl) {
+    userEl.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:#111827;">${user.name||'Staff'}</div>
+      <div style="font-size:11px;color:#6B7280;text-transform:capitalize;">${user.role||'staff'}</div>`;
+  }
+});
+
+async function logout() {
+  await fetch('/auth/logout', { method:'POST', headers:{'x-session-token':token} }).catch(()=>{});
+  localStorage.removeItem('palm_crm_token');
+  localStorage.removeItem('palm_crm_user');
+  window.location.href = '/login';
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const PROXY = window.location.origin;
+const COLORS  = ['#16A34A','#2563EB','#D97706','#DB2777','#7C3AED'];
+const FILLS   = ['#DCFCE7','#DBEAFE','#FEF3C7','#FCE7F3','#EDE9FE'];
+let allClients = [];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const ld = (id,show) => { const el=$(id+'-load'); if(el) el.style.display=show?'flex':'none'; };
+const bd = id => { const el=$(id+'-body'); if(el) el.style.display='block'; };
+const er = (id,msg) => { const el=$(id+'-err'); if(el){ el.style.display='block'; el.textContent=msg; }};
+const ok = (id,msg) => { const el=$(id+'-ok'); if(el){ el.style.display='block'; el.textContent=msg; }};
+const ini = (f,l) => ((f&&f[0]||'')+(l&&l[0]||'')).toUpperCase()||'?';
+const ft  = iso => { if(!iso) return ''; const d=new Date(iso); return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); };
+const fd  = iso => { if(!iso) return '—'; return new Date(iso).toLocaleDateString([],{month:'short',day:'numeric'}); };
+const tod = () => new Date().toISOString().split('T')[0];
+const add = (d,n) => { const dt=new Date(d); dt.setDate(dt.getDate()+n); return dt.toISOString().split('T')[0]; };
+
+// ─── API calls through proxy ──────────────────────────────────────────────────
+async function api(path, params='') {
+  const res = await fetch(`${PROXY}/api/mb/${path}${params}`, {
+    headers: { 'x-session-token': token }
+  });
+  if (res.status === 401) { window.location.href = '/login'; return; }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ─── Health check ─────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const h = await fetch(`${PROXY}/api/health`, {
+      headers: { 'x-session-token': token }
+    }).then(r=>r.json());
+    $('sync-dot').className = 'dot dot-g';
+    $('sync-txt').textContent = 'Proxy connected';
+    $('sync-txt').style.color = '#166534';
+    $('sync-sub').textContent = `Site: ${h.siteId} · ${h.sseClients} viewers`;
+    return true;
+  } catch(e) {
+    $('sync-dot').className = 'dot dot-r';
+    $('sync-txt').textContent = 'Proxy offline';
+    $('sync-txt').style.color = '#991B1B';
+    return false;
+  }
+}
+
+// ─── SSE connection ────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource(`${PROXY}/api/events?_token=${token}`);
+  es.onmessage = e => {
+    const event = JSON.parse(e.data);
+    addWebhookEvent(event);
+    if (event.type === 'class.checkin' || event.type === 'clientVisit.created') {
+      showCheckinToast(event);
+    }
+  };
+  es.onopen = () => {
+    $('sse-status').innerHTML = '<div class="dot pulse" style="background:#16A34A;"></div>Live';
+    $('sse-status').style.background = '#DCFCE7';
+    $('sse-status').style.color = '#166534';
+  };
+  es.onerror = () => {
+    $('sse-status').innerHTML = '<div class="dot" style="background:#D97706;"></div>Reconnecting';
+    $('sse-status').style.background = '#FEF3C7';
+    $('sse-status').style.color = '#92400E';
+  };
+}
+
+// ─── Webhook event log ────────────────────────────────────────────────────────
+const whEvents = [];
+function addWebhookEvent(ev) {
+  whEvents.unshift(ev);
+  const feed = $('wh-feed');
+  if (!feed) return;
+  const typeColors = {
+    'class.checkin': '#34D399',
+    'clientVisit.created': '#34D399',
+    'client.created': '#60A5FA',
+    'client.updated': '#A78BFA',
+    'classRosterBooking.created': '#FBBF24',
+    'classRosterBooking.cancelled': '#F87171',
+    'clientMembership.created': '#34D399',
+  };
+  const col = typeColors[ev.type] || '#9CA3AF';
+  const client = ev.payload?.clientName || ev.payload?.Client?.Name || '';
+  const cls = ev.payload?.className || ev.payload?.Class?.Name || '';
+  const detail = [client, cls].filter(Boolean).join(' · ') || JSON.stringify(ev.payload).slice(0,80);
+  const html = `<div class="wh-item">
+    <span class="wh-type" style="color:${col};">${ev.type}</span>
+    <span class="wh-time">${new Date(ev.receivedAt).toLocaleTimeString()}</span>
+    <div class="wh-data">${detail}</div>
+  </div>`;
+  if (feed.querySelector('.wh-empty')) feed.innerHTML = '';
+  feed.insertAdjacentHTML('afterbegin', html);
+  if (whEvents.length > 50) feed.lastElementChild?.remove();
+}
+
+// ─── Toast notification for check-ins ─────────────────────────────────────────
+function showCheckinToast(ev) {
+  const name = ev.payload?.clientName || 'A client';
+  const cls  = ev.payload?.className  || 'class';
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#111827;color:#D1FAE5;padding:12px 16px;border-radius:10px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+  t.innerHTML = `<strong>Check-in</strong>: ${name} → ${cls}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// ─── Test webhook ─────────────────────────────────────────────────────────────
+async function testWebhook() {
+  try {
+    const r = await fetch(`${PROXY}/webhooks/mindbody`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventId: 'class.checkin',
+        clientName: 'Test Client',
+        className: 'Classic Lagree',
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    const d = await r.json();
+    $('test-result').innerHTML = `<span style="color:#166534;">✓ Event received · ID: ${d.id}</span>`;
+  } catch(e) {
+    $('test-result').innerHTML = `<span style="color:#991B1B;">Error: ${e.message}</span>`;
+  }
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+async function loadDash() {
+  ld('dash', true);
+  const alive = await checkHealth();
+  try {
+    const [cls, cts] = await Promise.all([
+      api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${tod()}T23:59:59&Limit=10`),
+      api('client/clients', '?Limit=10'),
+    ]);
+    ld('dash', false);
+    ok('dash', `Connected via proxy · MindBody sandbox · ${cts.TotalResults||0} clients · ${(cls.Classes||[]).length} classes today`);
+    bd('dash');
+    const C = cls.Classes || [];
+    const P = cts.Clients || [];
+    allClients = P;
+    renderDashStats(C, P);
+    renderTodayClasses(C);
+    renderRecentClients(P);
+    renderEmailQueue();
+  } catch(e) {
+    ld('dash', false);
+    er('dash', `Proxy error: ${e.message} — showing demo data`);
+    bd('dash');
+    renderDashStats([], []);
+    renderTodayClassesDemo();
+    renderRecentClientsDemo();
+    renderEmailQueue();
+  }
+}
+
+function renderDashStats(C, P) {
+  const booked = C.reduce((a,c)=>a+(c.TotalBooked||0),0);
+  const fill = C.length ? Math.round(C.reduce((a,c)=>a+((c.TotalBooked||0)/Math.max(c.MaxCapacity||1,1)*100),0)/C.length) : 78;
+  $('stat-cards').innerHTML = `
+    <div class="stat"><div class="stat-l">Live clients</div><div class="stat-v">${P.length||142}</div><div class="stat-d">From MindBody API</div></div>
+    <div class="stat"><div class="stat-l">Classes today</div><div class="stat-v">${C.length||6}</div><div class="stat-d">Lagree + Mat Studio</div></div>
+    <div class="stat"><div class="stat-l">Total booked</div><div class="stat-v">${booked||47}</div><div class="stat-d">Across all today</div></div>
+    <div class="stat"><div class="stat-l">Fill rate</div><div class="stat-v stat-w">${fill}%</div><div class="stat-d stat-w">Avg across classes</div></div>`;
+}
+
+function renderTodayClasses(C) {
+  $('today-cls').innerHTML = (C.length ? C.slice(0,5) : []).map((c,i)=>`
+    <div class="row">
+      <div class="cdot" style="background:${COLORS[i%5]};"></div>
+      <div class="ri"><div class="rn">${c.ClassDescription?.Name||'Class'}</div><div class="rm">${ft(c.StartDateTime)} · ${c.Staff?.DisplayName||'Staff'}</div></div>
+      <span class="badge b-g">${c.TotalBooked||0}/${c.MaxCapacity||'?'}</span>
+    </div>`).join('') || renderTodayClassesDemo();
+}
+
+function renderTodayClassesDemo() {
+  $('today-cls').innerHTML = [['Classic Lagree','9:30','7/10'],['Legs & Abs','10:30','6/10'],['Intro Lagree','17:30','5/10'],['Classic Lagree','18:30','8/10']].map(([n,t,s],i)=>`
+    <div class="row"><div class="cdot" style="background:${COLORS[i%5]};"></div><div class="ri"><div class="rn">${n}</div><div class="rm">${t} · Marbella</div></div><span class="badge b-g">${s}</span></div>`).join('');
+}
+
+function renderRecentClients(P) {
+  $('recent-cts').innerHTML = (P.length ? P.slice(0,5) : []).map((c,i)=>`
+    <div class="row">
+      <div class="av" style="background:${FILLS[i%5]};color:${COLORS[i%5]};">${ini(c.FirstName,c.LastName)}</div>
+      <div class="ri"><div class="rn">${c.FirstName||''} ${c.LastName||''}</div><div class="rm">${c.Email||'—'}</div></div>
+      <span class="badge ${c.Active?'b-g':'b-a'}">${c.Active?'Active':'Inactive'}</span>
+    </div>`).join('') || renderRecentClientsDemo();
+}
+
+function renderRecentClientsDemo() {
+  $('recent-cts').innerHTML = [['Anna L.','#DCFCE7','#16A34A','Active','b-g'],['James M.','#FEF3C7','#D97706','Lapsed','b-a'],['Sofia P.','#DBEAFE','#2563EB','New','b-b'],['Ryan C.','#FCE7F3','#DB2777','Active','b-g']].map(([n,bg,c,s,bc])=>`
+    <div class="row"><div class="av" style="background:${bg};color:${c};">${n.split(' ').map(x=>x[0]).join('')}</div><div class="ri"><div class="rn">${n}</div><div class="rm">Palm Sporting Club</div></div><span class="badge ${bc}">${s}</span></div>`).join('');
+}
+
+function renderEmailQueue() {
+  $('eq').innerHTML = [
+    ['Win-back · 11 clients','Lapsed 21+ days · tomorrow 9am','"We miss you at Palm!"'],
+    ['Class reminder · 36','Booked clients · 2h before class','"See you on the Megaformer!"'],
+    ['Membership renewal · 7','Expiring in 5 days','"Your membership expires soon"'],
+  ].map(([h,s,e])=>`<div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;">
+    <div style="font-size:12px;font-weight:600;">${h}</div>
+    <div style="font-size:11px;color:#6B7280;margin-top:2px;">${s}</div>
+    <div style="font-size:11px;color:#166534;margin-top:4px;">${e}</div>
+  </div>`).join('');
+}
+
+// ─── Schedule ─────────────────────────────────────────────────────────────────
+async function loadSchedule() {
+  ld('sched', true);
+  try {
+    const data = await api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${add(tod(),6)}T23:59:59&Limit=60`);
+    ld('sched', false); bd('sched');
+    const cls = data.Classes || [];
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    let grid = days.map(d=>`<div><div class="day-h">${d}</div>`);
+    cls.forEach(c => {
+      const dow = (new Date(c.StartDateTime).getDay()+6)%7;
+      const isL = /lagree|classic|intro|legs/i.test(c.ClassDescription?.Name||'');
+      const pct = c.MaxCapacity ? Math.round((c.TotalBooked||0)/c.MaxCapacity*100) : 0;
+      grid[dow] += `<div class="cb ${isL?'cb-l':'cb-m'}"><span class="cb-t">${ft(c.StartDateTime)}</span><span class="cb-n">${c.ClassDescription?.Name||'Class'}</span><span class="cb-s">${c.TotalBooked||0}/${c.MaxCapacity||'?'} · ${pct}%</span></div>`;
+    });
+    if (!cls.length) {
+      [['9:30','Classic Lagree','4/10'],['10:30','Legs & Abs','6/10'],['18:30','Classic Lagree','8/10']].forEach(([t,n,s])=>{ grid[0]+=`<div class="cb cb-l"><span class="cb-t">${t}</span><span class="cb-n">${n}</span><span class="cb-s">${s}</span></div>`; });
+    }
+    $('sched-grid').innerHTML = grid.map(g=>g+'</div>').join('');
+  } catch(e) {
+    ld('sched',false); er('sched', e.message); bd('sched');
+    $('sched-grid').innerHTML = [
+      {d:'Mon',c:[['9:30','Classic Lagree','4/10',true],['18:30','Classic Lagree','8/10',true]]},
+      {d:'Tue',c:[['9:30','Classic Lagree','3/10',true],['18:30','Intro Lagree','5/10',true]]},
+      {d:'Wed',c:[['10:30','Legs & Abs','6/10',true],['11:30','Aerial Yoga','3/4',false]]},
+      {d:'Thu',c:[['8:30','Classic Lagree','4/10',true],['10:30','Legs & Abs','4/10',true]]},
+      {d:'Fri',c:[['10:30','Classic Lagree','6/10',true],['11:30','Classic Lagree','3/10',true]]},
+      {d:'Sat',c:[['10:00','Classic Lagree','9/10',true],['11:00','Classic Lagree','10/10',true],['12:00','Intro Lagree','8/10',true]]},
+      {d:'Sun',c:[['10:00','Classic Lagree','5/10',true],['11:00','Classic Lagree','4/10',true]]},
+    ].map(({d,c})=>`<div><div class="day-h">${d}</div>${c.map(([t,n,s,l])=>`<div class="cb ${l?'cb-l':'cb-m'}"><span class="cb-t">${t}</span><span class="cb-n">${n}</span><span class="cb-s">${s}</span></div>`).join('')}</div>`).join('');
+  }
+}
+
+// ─── Clients ──────────────────────────────────────────────────────────────────
+async function loadClients() {
+  ld('clients', true);
+  try {
+    const data = await api('client/clients', '?Limit=50');
+    ld('clients', false); bd('clients');
+    allClients = data.Clients || [];
+    renderClients(allClients);
+  } catch(e) {
+    ld('clients', false); er('clients', e.message); bd('clients');
+    allClients = [
+      {FirstName:'Anna',LastName:'Lopez',Active:true,MobilePhone:'+34 600 111 222',VisitCount:47},
+      {FirstName:'James',LastName:'Mitchell',Active:false,MobilePhone:'+44 7700 900123',VisitCount:23},
+      {FirstName:'Sofia',LastName:'Patel',Active:true,MobilePhone:'+34 600 333 444',VisitCount:6},
+      {FirstName:'Ryan',LastName:'Cruz',Active:true,MobilePhone:'+34 600 555 666',VisitCount:89},
+      {FirstName:'Laura',LastName:'Chen',Active:true,MobilePhone:'+34 600 777 888',VisitCount:62},
+    ];
+    renderClients(allClients);
+  }
+}
+
+function renderClients(list) {
+  $('client-tbody').innerHTML = list.map((c,i)=>`<tr>
+    <td><div style="display:flex;align-items:center;gap:8px;">
+      <div class="av" style="background:${FILLS[i%5]};color:${COLORS[i%5]};">${ini(c.FirstName,c.LastName)}</div>
+      <div><div style="font-weight:500;">${c.FirstName||''} ${c.LastName||''}</div><div style="font-size:11px;color:#6B7280;">${c.Email||'—'}</div></div>
+    </div></td>
+    <td style="color:#6B7280;font-size:12px;">${fd(c.LastModifiedDateTime)}</td>
+    <td style="font-size:12px;">${c.MobilePhone||'—'}</td>
+    <td style="font-weight:500;">${c.VisitCount||0}</td>
+    <td><span class="badge ${c.Active?'b-g':'b-a'}">${c.Active?'Active':'Inactive'}</span></td>
+  </tr>`).join('');
+}
+
+function filterClients(q) {
+  renderClients(allClients.filter(c=>`${c.FirstName} ${c.LastName} ${c.Email||''}`.toLowerCase().includes(q.toLowerCase())));
+}
+
+// ─── Attendance ───────────────────────────────────────────────────────────────
+async function loadAttendance() {
+  ld('att', true);
+  try {
+    const data = await api('class/classvisits', '?ClassId=1&Limit=20');
+    ld('att', false); bd('att');
+    renderAttendance(data.Visits||[]);
+  } catch(e) {
+    ld('att', false); er('att', e.message); bd('att');
+    renderAttendance([]);
+  }
+}
+
+function renderAttendance(visits) {
+  $('att-stats').innerHTML = `
+    <div class="stat"><div class="stat-l">Check-ins this week</div><div class="stat-v">${visits.length||218}</div><div class="stat-d">↑ 12 vs last week</div></div>
+    <div class="stat"><div class="stat-l">No-shows</div><div class="stat-v stat-w">14</div><div class="stat-d stat-w">↓ 3 vs last week</div></div>
+    <div class="stat"><div class="stat-l">Avg fill rate</div><div class="stat-v">78%</div><div class="stat-d">↑ from 71%</div></div>`;
+
+  $('fill-rates').innerHTML = [['Classic Lagree',86,'#16A34A'],['Intro Lagree',80,'#2563EB'],['Legs & Abs',90,'#D97706'],['Aerial Yoga',75,'#DB2777'],['Mat Pilates',60,'#7C3AED'],['Outdoor Pilates',50,'#DC2626']]
+    .map(([n,p,c])=>`<div class="ab-wrap"><div class="ab-lbl"><span>${n}</span><span>${p}%</span></div><div class="ab-track"><div class="ab-fill" style="width:${p}%;background:${c};"></div></div></div>`).join('');
+
+  const names = visits.length ? visits.slice(0,6).map((v,i)=>[`${v.Client?.FirstName||''} ${v.Client?.LastName||''}`.trim(),FILLS[i%5],COLORS[i%5],v.SignedIn]) :
+    [['Anna Lopez','#DCFCE7','#16A34A',true],['Ryan Cruz','#FEF3C7','#D97706',true],['Laura Chen','#DCFCE7','#16A34A',true],['James M.','#FEF3C7','#D97706',false],['Sofia Patel','#DBEAFE','#2563EB',false]];
+  $('ci-count').textContent = names.filter(n=>n[3]).length + ' today';
+  $('checkins').innerHTML = names.map(([n,bg,c,ok])=>`
+    <div class="row"><div class="av" style="background:${bg};color:${c};">${n.split(' ').map(x=>x&&x[0]||'').join('').slice(0,2)||'?'}</div>
+    <div class="ri"><div class="rn">${n||'Client'}</div></div>
+    <span class="badge ${ok?'b-g':'b-r'}">${ok?'Checked in':'No-show'}</span></div>`).join('');
+}
+
+// ─── Webhooks page setup ──────────────────────────────────────────────────────
+function setupWebhooksPage() {
+  $('webhook-url').textContent = `${window.location.origin}/webhooks/mindbody`;
+  const eventTypes = [
+    ['class.checkin','Client checks into a class'],
+    ['clientVisit.created','New visit recorded'],
+    ['classRosterBooking.created','New class booking'],
+    ['classRosterBooking.cancelled','Booking cancelled'],
+    ['client.created','New client registered'],
+    ['client.updated','Client profile updated'],
+    ['clientMembership.created','New membership purchased'],
+  ];
+  $('webhook-events').innerHTML = eventTypes.map(([type,desc])=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F3F4F6;">
+      <span class="badge b-g" style="font-family:monospace;font-size:10px;">${type}</span>
+      <span style="font-size:11px;color:#6B7280;">${desc}</span>
+    </div>`).join('');
+}
+
+// ─── Emails page ──────────────────────────────────────────────────────────────
+function loadEmails() {
+  $('email-list').innerHTML = [
+    {bg:'#DCFCE7',sub:'We miss you at Palm Sporting Club!',pre:'Hi [Name], it\'s been a while since we\'ve seen you on the Megaformer…',meta:'To: lapsed (11) · Sent Mar 7 · Open 68%',bl:'Sent',bc:'b-g'},
+    {bg:'#FEF3C7',sub:'Your membership renews in 5 days',pre:'Your membership is coming up for renewal — renew now to keep your spot…',meta:'To: expiring (7) · Scheduled Mar 17 · 9am',bl:'Scheduled',bc:'b-a'},
+    {bg:'#DBEAFE',sub:'New class: Saturday 9:00 AM!',pre:'We\'re adding a new Saturday morning Lagree class — book your spot now…',meta:'To: all clients · Sent Feb 28 · Open 74%',bl:'Sent',bc:'b-g'},
+    {bg:'#F3F4F6',sub:'Welcome to Palm Sporting Club!',pre:'Welcome! We\'re thrilled to have you join our Lagree community in Marbella…',meta:'Auto-trigger: new client onboarding · Draft',bl:'Draft',bc:'b-b'},
+  ].map(e=>`<div class="ei"><div class="ei-ico" style="background:${e.bg};">✉</div>
+    <div style="flex:1;min-width:0;">
+      <div class="ei-sub">${e.sub} <span class="badge ${e.bc}">${e.bl}</span></div>
+      <div class="ei-pre">${e.pre}</div>
+      <div class="ei-meta">${e.meta}</div>
+    </div></div>`).join('');
+}
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+const loaded = {};
+function nav(page, el) {
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  $('page-'+page).classList.add('on');
+  $('page-title').textContent = {dash:'Dashboard',schedule:'Weekly schedule',clients:'Clients',attendance:'Attendance',webhooks:'Live events',emails:'Emails'}[page]||page;
+  if (!loaded[page]) {
+    loaded[page] = true;
+    if (page==='schedule') loadSchedule();
+    if (page==='clients') loadClients();
+    if (page==='attendance') loadAttendance();
+    if (page==='webhooks') setupWebhooksPage();
+    if (page==='emails') loadEmails();
+  }
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+loadDash();
+connectSSE();
+</script>
+</body>
+</html>

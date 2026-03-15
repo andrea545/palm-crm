@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palm Sporting Club — Sign in</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #F7F6F3;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #E5E7EB;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .logo {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .logo-icon {
+    width: 52px;
+    height: 52px;
+    background: #DCFCE7;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    font-size: 24px;
+  }
+  .logo-name {
+    font-size: 17px;
+    font-weight: 600;
+    color: #111827;
+  }
+  .logo-sub {
+    font-size: 13px;
+    color: #6B7280;
+    margin-top: 3px;
+  }
+  .divider {
+    height: 1px;
+    background: #F3F4F6;
+    margin: 0 -36px 28px;
+  }
+  .field {
+    margin-bottom: 14px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6B7280;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+  }
+  input {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    border: 1px solid #D1D5DB;
+    border-radius: 9px;
+    color: #111827;
+    background: #fff;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: #16A34A; box-shadow: 0 0 0 3px rgba(22,163,74,.08); }
+  .btn {
+    width: 100%;
+    padding: 11px;
+    background: #16A34A;
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 6px;
+    transition: background .15s;
+  }
+  .btn:hover { background: #15803D; }
+  .btn:disabled { background: #9CA3AF; cursor: not-allowed; }
+  .error {
+    background: #FEF2F2;
+    border: 1px solid #FECACA;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: #991B1B;
+    margin-bottom: 14px;
+    display: none;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 12px;
+    color: #9CA3AF;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">🌴</div>
+    <div class="logo-name">Palm Sporting Club</div>
+    <div class="logo-sub">Marbella · Staff CRM</div>
+  </div>
+  <div class="divider"></div>
+
+  <div class="error" id="err"></div>
+
+  <div class="field">
+    <label>Username</label>
+    <input type="text" id="username" placeholder="e.g. andrea" autocomplete="username" />
+  </div>
+  <div class="field">
+    <label>Password</label>
+    <input type="password" id="password" placeholder="Your password" autocomplete="current-password" />
+  </div>
+  <button class="btn" id="btn" onclick="login()">Sign in</button>
+
+  <div class="footer">Only Palm Sporting Club staff can access this system.</div>
+</div>
+
+<script>
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+  async function login() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const err = document.getElementById('err');
+    const btn = document.getElementById('btn');
+
+    if (!username || !password) {
+      err.textContent = 'Please enter your username and password.';
+      err.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+    err.style.display = 'none';
+
+    try {
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        err.textContent = data.error || 'Invalid username or password.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Sign in';
+        return;
+      }
+
+      // Store session token
+      localStorage.setItem('palm_crm_token', data.token);
+      localStorage.setItem('palm_crm_user', JSON.stringify({ name: data.name, role: data.role, username: data.username }));
+
+      // Redirect to CRM
+      window.location.href = '/';
+
+    } catch (e) {
+      err.textContent = 'Connection error. Please try again.';
+      err.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+    }
+  }
+</script>
+</body>
+</html>

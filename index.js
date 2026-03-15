@@ -1,0 +1,409 @@
+const express = require('express');
+const cors = require('cors');
+const fetch = require('node-fetch');
+const crypto = require('crypto');
+const path = require('path');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+const CONFIG = {
+  apiKey:         process.env.MB_API_KEY         || '991c7812b5c7430a828e0d3dec2cb485',
+  siteId:         process.env.MB_SITE_ID         || '-99',
+  sourceName:     process.env.MB_SOURCE_NAME     || 'PSCCRM',
+  sourcePassword: process.env.MB_SOURCE_PWD      || 'eh0z1tCPBF5GE2lTB5dV9dWSUSY=',
+  mbUsername:     process.env.MB_USERNAME        || 'mindbodysandboxsite@gmail.com',
+  mbPassword:     process.env.MB_PASSWORD        || 'Apitest1234',
+  webhookSecret:  process.env.MB_WEBHOOK_SECRET  || 'palm-webhook-secret-2026',
+  sendgridKey:    process.env.SENDGRID_API_KEY   || '',
+  fromEmail:      process.env.FROM_EMAIL         || 'hello@palmsportingclub.com',
+  fromName:       process.env.FROM_NAME          || 'Palm Sporting Club',
+  port:           process.env.PORT               || 3000,
+};
+
+const MB_BASE = 'https://api.mindbodyonline.com/public/v6';
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+// Password: Hello999
+const USERS = [
+  { username: 'andrea', passwordHash: '96fbec87108641aebc24db0e94a859442b648e194d37f360cd8ae50a9e2236cc', role: 'owner', name: 'Andrea' },
+  { username: 'staff1', passwordHash: '96fbec87108641aebc24db0e94a859442b648e194d37f360cd8ae50a9e2236cc', role: 'staff', name: 'Staff Member' },
+];
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+const sessions = new Map();
+
+function createSession(user) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, {
+    username: user.username, name: user.name, role: user.role,
+    createdAt: Date.now(), expiresAt: Date.now() + 8 * 60 * 60 * 1000,
+  });
+  return token;
+}
+
+function getSession(token) {
+  if (!token) return null;
+  const s = sessions.get(token);
+  if (!s) return null;
+  if (Date.now() > s.expiresAt) { sessions.delete(token); return null; }
+  return s;
+}
+
+function requireAuth(req, res, next) {
+  const token = req.headers['x-session-token'] || req.query._token;
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  req.session = session;
+  next();
+}
+
+// ─── Auth routes ─────────────────────────────────────────────────────────────
+app.post('/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const user = USERS.find(u => u.username.toLowerCase() === username.toLowerCase());
+  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+  const hash = crypto.createHash('sha256').update(password).digest('hex');
+  if (hash !== user.passwordHash) return res.status(401).json({ error: 'Invalid username or password' });
+  const token = createSession(user);
+  res.json({ token, name: user.name, role: user.role, username: user.username });
+});
+
+app.post('/auth/logout', (req, res) => {
+  const token = req.headers['x-session-token'];
+  if (token) sessions.delete(token);
+  res.json({ ok: true });
+});
+
+app.get('/auth/me', (req, res) => {
+  const token = req.headers['x-session-token'];
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+  res.json({ name: session.name, role: session.role, username: session.username });
+});
+
+// ─── Serve static files (no redirect middleware — login handled client-side) ─
+app.use(express.static(path.join(__dirname)));
+
+// ─── MindBody token cache ─────────────────────────────────────────────────────
+let tokenCache = { token: null, expires: 0 };
+
+async function getMBToken() {
+  if (tokenCache.token && Date.now() < tokenCache.expires) return tokenCache.token;
+  const res = await fetch(`${MB_BASE}/usertoken/issue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId },
+    body: JSON.stringify({ Username: CONFIG.mbUsername, Password: CONFIG.mbPassword }),
+  });
+  const data = await res.json();
+  if (!data.AccessToken) throw new Error('MB auth failed');
+  tokenCache = { token: data.AccessToken, expires: Date.now() + 55 * 60 * 1000 };
+  return tokenCache.token;
+}
+
+// ─── MindBody proxy ───────────────────────────────────────────────────────────
+app.all('/api/mb/*', requireAuth, async (req, res) => {
+  try {
+    const token = await getMBToken();
+    const mbPath = req.params[0];
+    const query = new URLSearchParams(req.query).toString();
+    const url = `${MB_BASE}/${mbPath}${query ? '?' + query : ''}`;
+    const mbRes = await fetch(url, {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json', 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': token },
+      body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body),
+    });
+    const data = await mbRes.json();
+    res.status(mbRes.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Email sending via SendGrid ───────────────────────────────────────────────
+async function sendEmail({ to, toName, subject, html }) {
+  if (!CONFIG.sendgridKey) {
+    console.log(`[email] No SendGrid key — would send to ${to}: ${subject}`);
+    return { ok: true, simulated: true };
+  }
+  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to, name: toName }] }],
+      from: { email: CONFIG.fromEmail, name: CONFIG.fromName },
+      subject,
+      content: [{ type: 'text/html', value: html }],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[email] SendGrid error:', err);
+    return { ok: false, error: err };
+  }
+  console.log(`[email] Sent to ${to}: ${subject}`);
+  return { ok: true };
+}
+
+// ─── Email templates ──────────────────────────────────────────────────────────
+function emailWrapper(content) {
+  return `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F7F6F3;margin:0;padding:20px;">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:32px;border:1px solid #E5E7EB;">
+<div style="text-align:center;margin-bottom:24px;">
+  <div style="font-size:28px;margin-bottom:8px;">🌴</div>
+  <div style="font-weight:600;font-size:18px;color:#111827;">Palm Sporting Club</div>
+  <div style="font-size:13px;color:#6B7280;">Marbella</div>
+</div>
+${content}
+<div style="margin-top:28px;padding-top:20px;border-top:1px solid #F3F4F6;text-align:center;font-size:12px;color:#9CA3AF;">
+  Palm Sporting Club · Oasis Business Center, Marbella<br>
+  <a href="https://www.palmsportingclub.com" style="color:#16A34A;">palmsportingclub.com</a>
+</div>
+</div></body></html>`;
+}
+
+const EMAIL_TEMPLATES = {
+
+  // Email 1: Intro pack complete → discount on 5/10 class pack
+  introPackComplete: (name) => ({
+    subject: `You crushed your intro pack — here's what's next 🌴`,
+    html: emailWrapper(`
+      <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">Amazing work, ${name}!</h2>
+      <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You've just completed all 3 classes in your intro pack — you're officially part of the Palm community!</p>
+      <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Ready to keep your momentum going? We'd love to have you back on the Megaformer.</p>
+      <div style="background:#F0FDF4;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;border:1px solid #BBF7D0;">
+        <div style="font-size:13px;color:#166534;margin-bottom:6px;font-weight:500;">YOUR EXCLUSIVE DISCOUNT</div>
+        <div style="font-size:32px;font-weight:700;color:#16A34A;letter-spacing:2px;">PALM10</div>
+        <div style="font-size:13px;color:#166534;margin-top:6px;">10% off a 5 or 10-class pack · Valid 7 days</div>
+      </div>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#16A34A;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Shop class packs →</a>
+      <p style="font-size:12px;color:#9CA3AF;text-align:center;">Use code PALM10 at checkout. One use per client.</p>
+    `)
+  }),
+
+  // Email 2: 2nd 10-class pack purchase → membership upsell
+  membershipUpsell: (name) => ({
+    subject: `You keep coming back — have you considered a membership? 💚`,
+    html: emailWrapper(`
+      <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">You're a regular, ${name}!</h2>
+      <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You've now bought two 10-class packs — you're clearly hooked on Lagree (we don't blame you!).</p>
+      <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Have you thought about switching to a monthly membership? You'd save money, always have credits ready, and never have to think about topping up.</p>
+      <div style="background:#EFF6FF;border-radius:12px;padding:20px;margin-bottom:20px;border:1px solid #BFDBFE;">
+        <div style="font-size:13px;font-weight:600;color:#1E40AF;margin-bottom:10px;">MEMBERSHIP BENEFITS</div>
+        <div style="font-size:13px;color:#1D4ED8;line-height:1.8;">
+          ✓ Unlimited or fixed monthly classes<br>
+          ✓ Better value than class packs<br>
+          ✓ Priority booking<br>
+          ✓ Cancel anytime
+        </div>
+      </div>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#2563EB;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">View membership options →</a>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Questions? Reply to this email or WhatsApp us at +34 687 28 29 94</p>
+    `)
+  }),
+
+  // Email 3: Last credit used → top up now
+  lastCredit: (name) => ({
+    subject: `That was your last credit — don't lose your momentum 🌴`,
+    html: emailWrapper(`
+      <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">Time to top up, ${name}!</h2>
+      <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You just used your last class credit — great work staying consistent!</p>
+      <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Don't let your streak fade. Grab a new pack now and keep your body moving.</p>
+      <div style="display:flex;gap:10px;margin-bottom:20px;">
+        <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#16A34A;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">5-class pack →</a>
+        <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#111827;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">10-class pack →</a>
+      </div>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Book directly from the <a href="https://mndbdy.ly/e/5737970" style="color:#16A34A;">Palm app</a> too.</p>
+    `)
+  }),
+
+  // Email 4: New client welcome → intro offer with purchase link
+  welcome: (name) => ({
+    subject: `Welcome to Palm Sporting Club, ${name}! 🌴`,
+    html: emailWrapper(`
+      <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">Welcome, ${name}!</h2>
+      <p style="color:#374151;line-height:1.7;margin-bottom:16px;">We're so excited to have you join the Palm Sporting Club community in Marbella. You're about to discover why Lagree has become the most talked-about workout in the world.</p>
+      <div style="background:#F0FDF4;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;border:1px solid #BBF7D0;">
+        <div style="font-size:13px;color:#166534;margin-bottom:6px;font-weight:500;">YOUR WELCOME OFFER</div>
+        <div style="font-size:22px;font-weight:700;color:#16A34A;margin-bottom:4px;">3-Class Intro Pack</div>
+        <div style="font-size:13px;color:#166534;">The perfect way to try Lagree at a special intro price</div>
+      </div>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#16A34A;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:16px;">Get your intro pack now →</a>
+      <p style="color:#374151;line-height:1.7;margin-bottom:8px;font-size:13px;"><strong>What to expect:</strong></p>
+      <p style="color:#6B7280;line-height:1.8;font-size:13px;margin-bottom:20px;">
+        ✓ 50-minute full-body workout on the Megaformer<br>
+        ✓ Suitable for all fitness levels<br>
+        ✓ Small classes, expert instructors<br>
+        ✓ Located in Oasis Business Center, Marbella
+      </p>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Any questions? WhatsApp us at <a href="https://wa.me/34687282994" style="color:#16A34A;">+34 687 28 29 94</a></p>
+    `)
+  }),
+};
+
+// ─── Automation logic ─────────────────────────────────────────────────────────
+async function handleAutomations(event) {
+  const type = event.type;
+  const payload = event.payload;
+
+  try {
+    // Email 4: New client created → send welcome + intro offer
+    if (type === 'client.created') {
+      const name = payload.firstName || payload.FirstName || 'there';
+      const email = payload.email || payload.Email;
+      if (email) {
+        const tpl = EMAIL_TEMPLATES.welcome(name);
+        await sendEmail({ to: email, toName: name, ...tpl });
+        console.log(`[automation] Welcome email sent to ${email}`);
+      }
+    }
+
+    // Email 1 + 3: Visit created → check credits remaining
+    if (type === 'clientVisit.created' || type === 'class.checkin') {
+      const clientId = payload.clientId || payload.ClientId;
+      const siteId = CONFIG.siteId;
+      if (!clientId) return;
+
+      // Get client info and services
+      const mbToken = await getMBToken();
+      const [clientRes, servicesRes] = await Promise.all([
+        fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
+          headers: { 'API-Key': CONFIG.apiKey, 'SiteId': siteId, 'Authorization': mbToken }
+        }),
+        fetch(`${MB_BASE}/client/clientservices?clientId=${clientId}`, {
+          headers: { 'API-Key': CONFIG.apiKey, 'SiteId': siteId, 'Authorization': mbToken }
+        }),
+      ]);
+
+      const clientData = await clientRes.json();
+      const servicesData = await servicesRes.json();
+
+      const client = (clientData.Clients || [])[0];
+      const services = servicesData.ClientServices || [];
+      if (!client) return;
+
+      const name = client.FirstName || 'there';
+      const email = client.Email;
+      if (!email) return;
+
+      // Check each active service
+      for (const svc of services) {
+        const remaining = svc.Remaining || 0;
+        const total = svc.Count || 0;
+        const svcName = (svc.Name || '').toLowerCase();
+
+        // Email 1: Intro pack — last class used (remaining = 0, total = 3)
+        if (remaining === 0 && total <= 3 && svcName.includes('intro')) {
+          const tpl = EMAIL_TEMPLATES.introPackComplete(name);
+          await sendEmail({ to: email, toName: name, ...tpl });
+          console.log(`[automation] Intro pack complete email sent to ${email}`);
+        }
+
+        // Email 3: Any class pack — last credit used (remaining = 0, not intro, not membership)
+        if (remaining === 0 && total > 3 && !svcName.includes('intro') && !svcName.includes('unlimited') && !svcName.includes('membership')) {
+          const tpl = EMAIL_TEMPLATES.lastCredit(name);
+          await sendEmail({ to: email, toName: name, ...tpl });
+          console.log(`[automation] Last credit email sent to ${email}`);
+        }
+      }
+    }
+
+    // Email 2: Purchase created → check if 2nd 10-class pack
+    if (type === 'clientPurchase.created' || type === 'sale.created') {
+      const clientId = payload.clientId || payload.ClientId;
+      const itemName = (payload.itemName || payload.Description || '').toLowerCase();
+      if (!clientId || !itemName.includes('10')) return;
+
+      const mbToken = await getMBToken();
+      // Get purchase history to count 10-class pack purchases
+      const salesRes = await fetch(`${MB_BASE}/sale/sales?clientId=${clientId}`, {
+        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+      });
+      const salesData = await salesRes.json();
+      const sales = salesData.Sales || [];
+
+      // Count how many times they've bought a 10-class pack
+      const tenPackCount = sales.filter(s =>
+        (s.Description || '').toLowerCase().includes('10')
+      ).length;
+
+      if (tenPackCount === 2) {
+        const clientRes = await fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
+          headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+        });
+        const clientData = await clientRes.json();
+        const client = (clientData.Clients || [])[0];
+        if (client && client.Email) {
+          const tpl = EMAIL_TEMPLATES.membershipUpsell(client.FirstName || 'there');
+          await sendEmail({ to: client.Email, toName: client.FirstName, ...tpl });
+          console.log(`[automation] Membership upsell email sent to ${client.Email}`);
+        }
+      }
+    }
+
+  } catch (err) {
+    console.error('[automation] Error:', err.message);
+  }
+}
+
+// ─── Webhook receiver ─────────────────────────────────────────────────────────
+const events = [];
+const sseClients = new Set();
+
+app.post('/webhooks/mindbody', (req, res) => {
+  const event = {
+    id: crypto.randomUUID(),
+    receivedAt: new Date().toISOString(),
+    type: req.body.eventId || req.body.EventId || 'unknown',
+    payload: req.body,
+  };
+  events.unshift(event);
+  if (events.length > 200) events.pop();
+  console.log(`[webhook] ${event.type} @ ${event.receivedAt}`);
+  broadcast(event);
+  handleAutomations(event);
+  res.status(200).json({ received: true, id: event.id });
+});
+
+// ─── SSE ─────────────────────────────────────────────────────────────────────
+app.get('/api/events', requireAuth, (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+  events.slice(0, 10).forEach(e => res.write(`data: ${JSON.stringify(e)}\n\n`));
+  sseClients.add(res);
+  req.on('close', () => sseClients.delete(res));
+});
+
+function broadcast(event) {
+  sseClients.forEach(c => c.write(`data: ${JSON.stringify(event)}\n\n`));
+}
+
+app.get('/api/events/log', requireAuth, (req, res) => {
+  res.json({ events: events.slice(0, 50), total: events.length });
+});
+
+// ─── Health ───────────────────────────────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', siteId: CONFIG.siteId, source: CONFIG.sourceName, sseClients: sseClients.size, eventsReceived: events.length, tokenCached: !!tokenCache.token });
+});
+
+// ─── Test email endpoint ──────────────────────────────────────────────────────
+app.post('/api/test-email', requireAuth, async (req, res) => {
+  const { type, email, name } = req.body;
+  const templates = { welcome: EMAIL_TEMPLATES.welcome, introPackComplete: EMAIL_TEMPLATES.introPackComplete, membershipUpsell: EMAIL_TEMPLATES.membershipUpsell, lastCredit: EMAIL_TEMPLATES.lastCredit };
+  const tpl = templates[type];
+  if (!tpl) return res.status(400).json({ error: 'Unknown template type' });
+  const result = await sendEmail({ to: email, toName: name, ...tpl(name) });
+  res.json(result);
+});
+
+app.listen(CONFIG.port, () => {
+  console.log(`🌴 Palm CRM running on port ${CONFIG.port}`);
+  console.log(`   Auth: username=andrea password=Hello999`);
+  console.log(`   Automations: 4 email triggers active`);
+});
