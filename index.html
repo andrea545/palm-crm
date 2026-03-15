@@ -880,12 +880,29 @@ async function loadAnalytics() {
 }
 
 function getDemoAnalytics() {
-  const weeks = ['W1 Feb','W2 Feb','W3 Feb','W4 Feb','W1 Mar','W2 Mar','W3 Mar'];
+  // Scale demo data based on selected time frame
+  const weekCounts = { '7d': 1, '30d': 5, '90d': 13, 'ytd': 11 };
+  const revMultipliers = { '7d': 0.25, '30d': 1, '90d': 3, 'ytd': 3.5 };
+  const rm = revMultipliers[anPeriod] || 1;
+  const wc = weekCounts[anPeriod] || 5;
+
+  // Generate weekly revenue dynamically
+  var weeklyRevenue = [];
+  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var now = new Date();
+  for (var w = wc - 1; w >= 0; w--) {
+    var wDate = new Date(now - (w+1)*7*24*60*60*1000);
+    var base = 2200 + Math.sin(w * 0.6) * 350 + (wc - w) * 40;
+    var label = wc <= 6 ? 'W' + (wc - w) : monthNames[wDate.getMonth()] + ' ' + wDate.getDate();
+    weeklyRevenue.push({ label: label, amount: Math.round(base) });
+  }
+
   return {
     live: false,
-    totalClients: 142, activeClients: 118, newThisMonth: 14,
-    classesThisMonth: 96, totalBooked: 672, avgFillRate: 78,
-    totalRevenue: 18420,
+    range: anPeriod, rangeDays: { '7d': 7, '30d': 30, '90d': 90, 'ytd': 75 }[anPeriod] || 30,
+    totalClients: 142, activeClients: 118, newThisMonth: Math.round(14 * rm),
+    classesThisMonth: Math.round(96 * rm), totalBooked: Math.round(672 * rm), avgFillRate: 78,
+    totalRevenue: Math.round(18420 * rm),
     atRiskCount: 9,
     atRiskClients: [
       { name:'James Mitchell', email:'james@email.com', lastSeen:'2026-02-24T10:00:00', visits:23 },
@@ -895,7 +912,7 @@ function getDemoAnalytics() {
       { name:'Carlos Ruiz', email:'carlos@email.com', lastSeen:'2026-02-15T16:00:00', visits:31 },
       { name:'Emma Johnson', email:'emma@email.com', lastSeen:'2026-02-26T08:00:00', visits:6 },
     ],
-    weeklyRevenue: weeks.map((w,i) => ({ label: w, amount: [2100,2450,2680,2340,2890,3120,2840][i] })),
+    weeklyRevenue: weeklyRevenue,
     fillRatesByClass: [
       { name:'Classic Lagree', rate:86, trend:'up' },
       { name:'Legs & Abs', rate:90, trend:'up' },
@@ -1034,57 +1051,51 @@ function renderAnTrend(d) {
   }
 
   const vals = weekly.map(r => r.amount);
-  const n = vals.length;
-  const xMean = (n - 1) / 2;
-  const yMean = vals.reduce((a,b) => a+b, 0) / n;
-  let num = 0, den = 0;
-  vals.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) * (x - xMean); });
-  const slope = den !== 0 ? num / den : 0;
-  const intercept = yMean - slope * xMean;
-
   const forecastCount = 3;
-  const allVals = [...vals];
-  for (let i = 0; i < forecastCount; i++) {
-    allVals.push(Math.max(0, Math.round(intercept + slope * (n + i))));
-  }
+  const fc = smartForecast(vals, forecastCount);
+  const allVals = [...vals, ...fc.forecasts];
   const maxVal = Math.max(...allVals, 1);
-  const totalBars = n + forecastCount;
 
   let barsHtml = '<div class="an-bar-row">';
-  for (let i = 0; i < totalBars; i++) {
+  for (let i = 0; i < allVals.length; i++) {
     const val = allVals[i];
     const pct = Math.max((val / maxVal) * 100, 4);
-    const isForecast = i >= n;
-    const bg = isForecast ? 'transparent' : (i === n - 1 ? '#16A34A' : '#D1FAE5');
+    const isForecast = i >= vals.length;
+    const bg = isForecast ? 'transparent' : (i === vals.length - 1 ? '#16A34A' : '#D1FAE5');
     const border = isForecast ? '2px dashed #16A34A' : 'none';
-    barsHtml += `<div class="an-bar" style="height:${pct}%;background:${bg};border:${border};border-radius:4px;" data-tip="${isForecast ? 'Forecast' : weekly[i].label}: ${val}"></div>`;
+    barsHtml += '<div class="an-bar" style="height:' + pct + '%;background:' + bg + ';border:' + border + ';border-radius:4px;" data-tip="' + (isForecast ? 'Forecast' : weekly[i].label) + ': ' + val + '"></div>';
   }
   barsHtml += '</div>';
   $('an-trend-chart').innerHTML = barsHtml;
 
   const labels = weekly.map(r => r.label);
   for (let i = 0; i < forecastCount; i++) labels.push('F' + (i+1));
-  $('an-trend-labels').innerHTML = labels.map(l => `<span>${l}</span>`).join('');
+  $('an-trend-labels').innerHTML = labels.map(function(l) { return '<span>' + l + '</span>'; }).join('');
 
-  const avgWeekly = yMean;
-  const trendDir = slope > 20 ? 'upward' : slope < -20 ? 'downward' : 'stable';
-  const trendColor = slope > 20 ? '#16A34A' : slope < -20 ? '#DC2626' : '#D97706';
-  const trendIcon = slope > 20 ? '&#9650;' : slope < -20 ? '&#9660;' : '&#9654;';
-  $('an-trend-summary').innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
-        <div style="font-size:11px;color:#166534;">Weekly average</div>
-        <div style="font-size:18px;font-weight:700;color:#166534;">\u20AC${Math.round(avgWeekly).toLocaleString()}</div>
-      </div>
-      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
-        <div style="font-size:11px;color:#166534;">Projected next week</div>
-        <div style="font-size:18px;font-weight:700;color:#166534;">\u20AC${Math.round(intercept + slope * n).toLocaleString()}</div>
-      </div>
-      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
-        <div style="font-size:11px;color:#166534;">Trend</div>
-        <div style="font-size:18px;font-weight:700;color:${trendColor};">${trendIcon} ${trendDir}</div>
-      </div>
-    </div>`;
+  const confColors = { high: '#16A34A', medium: '#D97706', low: '#DC2626' };
+  const confBg = { high: '#F0FDF4', medium: '#FFF7ED', low: '#FEF2F2' };
+  const trendDir = fc.slope > 20 ? 'upward' : fc.slope < -20 ? 'downward' : 'stable';
+  const trendColor = fc.slope > 20 ? '#16A34A' : fc.slope < -20 ? '#DC2626' : '#D97706';
+  const trendIcon = fc.slope > 20 ? '&#9650;' : fc.slope < -20 ? '&#9660;' : '&#9654;';
+
+  $('an-trend-summary').innerHTML = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
+      '<div style="font-size:11px;color:#166534;">Weekly average</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#166534;">\u20AC' + Math.round(fc.yMean).toLocaleString() + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
+      '<div style="font-size:11px;color:#166534;">Next week forecast</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#166534;">\u20AC' + fc.forecasts[0].toLocaleString() + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
+      '<div style="font-size:11px;color:#166534;">Trend</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + trendColor + ';">' + trendIcon + ' ' + trendDir + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:' + confBg[fc.confidence] + ';border-radius:8px;border:1px solid ' + confColors[fc.confidence] + '40;">' +
+      '<div style="font-size:11px;color:' + confColors[fc.confidence] + ';">Confidence</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + confColors[fc.confidence] + ';">' + fc.confidence.charAt(0).toUpperCase() + fc.confidence.slice(1) + '</div></div>' +
+    '</div>' +
+    '<div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;">' +
+      '<div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:6px;">Forecast reasoning</div>' +
+      fc.reasons.map(function(r) { return '<div style="font-size:12px;color:#6B7280;padding:2px 0;display:flex;gap:6px;"><span style="color:#16A34A;">&#8226;</span>' + r + '</div>'; }).join('') +
+    '</div>';
 }
 
 function buildWeeklyRevenue(d) {
@@ -1565,31 +1576,57 @@ async function loadKitchen() {
 }
 
 function getDemoKitchen() {
+  // Scale demo data based on selected time frame
+  const multipliers = { '7d': 0.25, '30d': 1, '90d': 3, 'ytd': 3.5 };
+  const m = multipliers[kitPeriod] || 1;
+  const weekCounts = { '7d': 1, '30d': 5, '90d': 13, 'ytd': 11 };
+  const wc = weekCounts[kitPeriod] || 5;
+  const daysCounts = { '7d': 7, '30d': 14, '90d': 12, 'ytd': 14 };
+  const dc = daysCounts[kitPeriod] || 14;
+  const rangeDaysMap = { '7d': 7, '30d': 30, '90d': 90, 'ytd': 75 };
+
+  // Generate daily bars
+  var dailyRevenue = [];
+  var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var now = new Date();
+  for (var i = dc - 1; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    var base = 350 + Math.sin(i * 0.5) * 120 + Math.random() * 80;
+    var label = dc <= 7 ? dayNames[d.getDay()] : monthNames[d.getMonth()] + ' ' + d.getDate();
+    dailyRevenue.push({ label: label, amount: Math.round(base), orders: Math.round(base / 14) });
+  }
+
+  // Generate weekly bars
+  var weeklyRevenue = [];
+  for (var w = 0; w < wc; w++) {
+    var wBase = 2400 + Math.sin(w * 0.7) * 400 + w * 60;
+    weeklyRevenue.push({ label: 'W' + (w+1), amount: Math.round(wBase), orders: Math.round(wBase / 14) });
+  }
+
+  var totalRevenue = Math.round(12840 * m);
+  var totalOrders = Math.round(892 * m);
+  var prevRev = Math.round(totalRevenue * 0.92);
+
   return {
-    live: false, totalRevenue: 12840, todayRevenue: 485, totalOrders: 892,
+    live: false, range: kitPeriod, rangeDays: rangeDaysMap[kitPeriod] || 30,
+    totalRevenue: totalRevenue, todayRevenue: 485, totalOrders: totalOrders,
     todayOrders: 34, avgOrderValue: 14.40, currency: 'EUR',
-    totalDiscounts: 320, uniqueCustomers: 245, repeatCustomers: 78, repeatRate: 32,
-    dailyRevenue: [
-      {label:'Mon',amount:420,orders:29},{label:'Tue',amount:510,orders:35},
-      {label:'Wed',amount:380,orders:26},{label:'Thu',amount:560,orders:38},
-      {label:'Fri',amount:620,orders:43},{label:'Sat',amount:740,orders:51},
-      {label:'Sun',amount:485,orders:34},
-    ],
-    weeklyRevenue: [
-      {label:'W1',amount:2680,orders:186},{label:'W2',amount:3120,orders:217},
-      {label:'W3',amount:2940,orders:204},{label:'W4',amount:3200,orders:222},
-      {label:'W5',amount:2900,orders:201},
-    ],
+    totalDiscounts: Math.round(320 * m), uniqueCustomers: Math.round(245 * Math.min(m, 2.5)), repeatCustomers: Math.round(78 * Math.min(m, 2)), repeatRate: 32,
+    dailyRevenue: dailyRevenue,
+    weeklyRevenue: weeklyRevenue,
+    prevRevenue: prevRev, prevOrders: Math.round(totalOrders * 0.88), prevAvgOrder: 13.80,
+    revGrowth: 8, orderGrowth: 12, avgGrowth: 4,
     topItems: [
-      {name:'Acai Bowl',qty:156,revenue:1872},{name:'Green Smoothie',qty:134,revenue:938},
-      {name:'Avocado Toast',qty:128,revenue:1536},{name:'Protein Shake',qty:112,revenue:672},
-      {name:'Poke Bowl',qty:98,revenue:1470},{name:'Granola Bowl',qty:87,revenue:870},
-      {name:'Fresh Juice',qty:76,revenue:456},{name:'Chicken Wrap',qty:64,revenue:768},
+      {name:'Acai Bowl',qty:Math.round(156*m),revenue:Math.round(1872*m)},{name:'Green Smoothie',qty:Math.round(134*m),revenue:Math.round(938*m)},
+      {name:'Avocado Toast',qty:Math.round(128*m),revenue:Math.round(1536*m)},{name:'Protein Shake',qty:Math.round(112*m),revenue:Math.round(672*m)},
+      {name:'Poke Bowl',qty:Math.round(98*m),revenue:Math.round(1470*m)},{name:'Granola Bowl',qty:Math.round(87*m),revenue:Math.round(870*m)},
+      {name:'Fresh Juice',qty:Math.round(76*m),revenue:Math.round(456*m)},{name:'Chicken Wrap',qty:Math.round(64*m),revenue:Math.round(768*m)},
     ],
     peakHours: [
-      {hour:12,count:142},{hour:13,count:128},{hour:11,count:96},
-      {hour:14,count:84},{hour:10,count:72},{hour:9,count:48},
-      {hour:15,count:36},{hour:16,count:24},
+      {hour:12,count:Math.round(142*m)},{hour:13,count:Math.round(128*m)},{hour:11,count:Math.round(96*m)},
+      {hour:14,count:Math.round(84*m)},{hour:10,count:Math.round(72*m)},{hour:9,count:Math.round(48*m)},
+      {hour:15,count:Math.round(36*m)},{hour:16,count:Math.round(24*m)},
     ],
   };
 }
@@ -1682,6 +1719,69 @@ function renderKitchen(d) {
     </div>`).join('');
 }
 
+// ─── Smart forecasting engine ────────────────────────────────────────────────
+function smartForecast(vals, forecastCount) {
+  const n = vals.length;
+  if (n < 2) return { forecasts: vals.length ? [vals[0]] : [0], slope: 0, momentum: 0, confidence: 'low', reasons: ['Not enough data for forecasting'], wma: vals[0]||0, recentAvg: vals[0]||0, volatility: 0, yMean: vals[0]||0 };
+
+  // 1. Linear regression (overall trend line)
+  const xMean = (n - 1) / 2;
+  const yMean = vals.reduce((a,b) => a+b, 0) / n;
+  let num = 0, den = 0;
+  vals.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) * (x - xMean); });
+  const slope = den ? num / den : 0;
+  const intercept = yMean - slope * xMean;
+
+  // 2. Weighted moving average (recent data weighted higher)
+  const weights = vals.map((_, i) => 1 + i);
+  const wSum = weights.reduce((a,b) => a+b, 0);
+  const wma = vals.reduce((a, v, i) => a + v * weights[i], 0) / wSum;
+
+  // 3. Recent momentum (last 3 vs first 3)
+  const recentN = Math.min(3, Math.floor(n/2));
+  const recentAvg = vals.slice(-recentN).reduce((a,b)=>a+b,0) / recentN;
+  const earlyAvg = vals.slice(0, recentN).reduce((a,b)=>a+b,0) / recentN;
+  const momentum = earlyAvg > 0 ? (recentAvg - earlyAvg) / earlyAvg : 0;
+
+  // 4. Volatility
+  const variance = vals.reduce((a, v) => a + Math.pow(v - yMean, 2), 0) / n;
+  const stdDev = Math.sqrt(variance);
+  const volatility = yMean > 0 ? stdDev / yMean : 0;
+
+  // 5. Blended forecast: 40% regression + 40% WMA + 20% momentum
+  const forecasts = [];
+  for (let i = 0; i < forecastCount; i++) {
+    const regVal = intercept + slope * (n + i);
+    const wmaVal = wma + slope * (i + 1);
+    const momVal = recentAvg * (1 + momentum * 0.3 * (i + 1));
+    const blended = regVal * 0.4 + wmaVal * 0.4 + momVal * 0.2;
+    forecasts.push(Math.max(0, Math.round(blended)));
+  }
+
+  // 6. Confidence
+  let confidence = 'medium';
+  if (n >= 7 && volatility < 0.3) confidence = 'high';
+  else if (n < 4 || volatility > 0.6) confidence = 'low';
+
+  // 7. Build reasoning
+  const reasons = [];
+  const pctChange = earlyAvg > 0 ? Math.round(momentum * 100) : 0;
+  if (Math.abs(pctChange) < 5) reasons.push('Revenue has been stable — forecast based on consistent averages');
+  else if (pctChange > 0) reasons.push('Revenue grew ' + pctChange + '% from start to recent period — positive trend factored in');
+  else reasons.push('Revenue declined ' + Math.abs(pctChange) + '% recently — downward adjustment applied');
+
+  if (volatility > 0.4) reasons.push('High variability between periods reduces forecast certainty');
+  else if (volatility < 0.15) reasons.push('Consistent revenue pattern increases reliability of projection');
+
+  if (recentAvg > yMean * 1.1) reasons.push('Recent performance above average — momentum is positive');
+  else if (recentAvg < yMean * 0.9) reasons.push('Recent performance below average — watch for potential slowdown');
+
+  if (n < 5) reasons.push('Limited data points — forecast accuracy improves with more history');
+  if (n >= 10) reasons.push('Strong data set of ' + n + ' periods gives robust trend analysis');
+
+  return { forecasts, slope, momentum, confidence, reasons, wma, recentAvg, volatility, yMean };
+}
+
 // ─── Kitchen trend + forecast chart ──────────────────────────────────────────
 function renderKitTrend(d, cur) {
   const daily = d.dailyRevenue || [];
@@ -1692,38 +1792,22 @@ function renderKitTrend(d, cur) {
     return;
   }
 
-  // Simple linear regression for forecasting
   const vals = daily.map(r => r.amount);
-  const n = vals.length;
-  const xMean = (n - 1) / 2;
-  const yMean = vals.reduce((a,b) => a+b, 0) / n;
-  let num = 0, den = 0;
-  vals.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) * (x - xMean); });
-  const slope = den !== 0 ? num / den : 0;
-  const intercept = yMean - slope * xMean;
-
-  // Forecast next 3 points
   const forecastCount = 3;
-  const allVals = [...vals];
-  const forecastVals = [];
-  for (let i = 0; i < forecastCount; i++) {
-    const fv = Math.max(0, Math.round((intercept + slope * (n + i)) * 100) / 100);
-    forecastVals.push(fv);
-    allVals.push(fv);
-  }
+  const fc = smartForecast(vals, forecastCount);
+  const allVals = [...vals, ...fc.forecasts];
   const maxVal = Math.max(...allVals, 1);
-  const totalBars = n + forecastCount;
 
-  // Build bars: actual + forecast (dashed border)
+  // Build bars
   let barsHtml = '<div class="an-bar-row">';
-  for (let i = 0; i < totalBars; i++) {
+  for (let i = 0; i < allVals.length; i++) {
     const val = allVals[i];
     const pct = Math.max((val / maxVal) * 100, 4);
-    const isForecast = i >= n;
-    const bg = isForecast ? 'transparent' : (i === n - 1 ? '#D97706' : '#FEF3C7');
+    const isForecast = i >= vals.length;
+    const bg = isForecast ? 'transparent' : (i === vals.length - 1 ? '#D97706' : '#FEF3C7');
     const border = isForecast ? '2px dashed #D97706' : 'none';
-    const tip = isForecast ? `Forecast: ${cur}${val}` : `${daily[i].label}: ${cur}${val}`;
-    barsHtml += `<div class="an-bar" style="height:${pct}%;background:${bg};border:${border};border-radius:4px;" data-tip="${tip}"></div>`;
+    const tip = isForecast ? 'Forecast: ' + cur + val : daily[i].label + ': ' + cur + val;
+    barsHtml += '<div class="an-bar" style="height:' + pct + '%;background:' + bg + ';border:' + border + ';border-radius:4px;" data-tip="' + tip + '"></div>';
   }
   barsHtml += '</div>';
   $('kit-trend-chart').innerHTML = barsHtml;
@@ -1731,29 +1815,33 @@ function renderKitTrend(d, cur) {
   // Labels
   const labels = daily.map(r => r.label);
   for (let i = 0; i < forecastCount; i++) labels.push('F' + (i+1));
-  $('kit-trend-labels').innerHTML = labels.map(l => `<span>${l}</span>`).join('');
+  $('kit-trend-labels').innerHTML = labels.map(l => '<span>' + l + '</span>').join('');
 
-  // Summary
-  const avgDaily = yMean;
-  const projectedPeriod = Math.round(avgDaily * (d.rangeDays || 30));
-  const trendDir = slope > 0.5 ? 'upward' : slope < -0.5 ? 'downward' : 'stable';
-  const trendColor = slope > 0.5 ? '#16A34A' : slope < -0.5 ? '#DC2626' : '#D97706';
-  const trendIcon = slope > 0.5 ? '&#9650;' : slope < -0.5 ? '&#9660;' : '&#9654;';
-  $('kit-trend-summary').innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:120px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">
-        <div style="font-size:11px;color:#9A3412;">Daily average</div>
-        <div style="font-size:18px;font-weight:700;color:#9A3412;">${cur}${Math.round(avgDaily)}</div>
-      </div>
-      <div style="flex:1;min-width:120px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">
-        <div style="font-size:11px;color:#9A3412;">Projected (next period)</div>
-        <div style="font-size:18px;font-weight:700;color:#9A3412;">${cur}${projectedPeriod >= 1000 ? (projectedPeriod/1000).toFixed(1)+'k' : projectedPeriod}</div>
-      </div>
-      <div style="flex:1;min-width:120px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">
-        <div style="font-size:11px;color:#9A3412;">Trend</div>
-        <div style="font-size:18px;font-weight:700;color:${trendColor};">${trendIcon} ${trendDir}</div>
-      </div>
-    </div>`;
+  // Summary with reasoning
+  const confColors = { high: '#16A34A', medium: '#D97706', low: '#DC2626' };
+  const confBg = { high: '#F0FDF4', medium: '#FFF7ED', low: '#FEF2F2' };
+  const trendDir = fc.slope > 0.5 ? 'upward' : fc.slope < -0.5 ? 'downward' : 'stable';
+  const trendColor = fc.slope > 0.5 ? '#16A34A' : fc.slope < -0.5 ? '#DC2626' : '#D97706';
+  const trendIcon = fc.slope > 0.5 ? '&#9650;' : fc.slope < -0.5 ? '&#9660;' : '&#9654;';
+
+  $('kit-trend-summary').innerHTML = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">' +
+      '<div style="font-size:11px;color:#9A3412;">Period average</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#9A3412;">' + cur + Math.round(fc.yMean) + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">' +
+      '<div style="font-size:11px;color:#9A3412;">Next period forecast</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#9A3412;">' + cur + fc.forecasts[0] + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">' +
+      '<div style="font-size:11px;color:#9A3412;">Trend</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + trendColor + ';">' + trendIcon + ' ' + trendDir + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:' + confBg[fc.confidence] + ';border-radius:8px;border:1px solid ' + confColors[fc.confidence] + '40;">' +
+      '<div style="font-size:11px;color:' + confColors[fc.confidence] + ';">Confidence</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + confColors[fc.confidence] + ';">' + fc.confidence.charAt(0).toUpperCase() + fc.confidence.slice(1) + '</div></div>' +
+    '</div>' +
+    '<div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;">' +
+      '<div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:6px;">Forecast reasoning</div>' +
+      fc.reasons.map(function(r) { return '<div style="font-size:12px;color:#6B7280;padding:2px 0;display:flex;gap:6px;"><span style="color:#D97706;">&#8226;</span>' + r + '</div>'; }).join('') +
+    '</div>';
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1909,64 +1997,58 @@ function renderMasterTrend(studio, kitchen, cur) {
     return;
   }
 
-  // Build combined values
   const combined = [];
-  const labels = [];
+  const lbls = [];
   for (let i = 0; i < maxLen; i++) {
     combined.push(((sWeeks[i]||{}).amount||0) + ((kWeeks[i]||{}).amount||0));
-    labels.push((sWeeks[i]||kWeeks[i]||{}).label||('W'+(i+1)));
+    lbls.push((sWeeks[i]||kWeeks[i]||{}).label||('W'+(i+1)));
   }
 
-  // Linear regression on combined
-  const n = combined.length;
-  const xMean = (n - 1) / 2;
-  const yMean = combined.reduce((a,b)=>a+b,0) / n;
-  let num = 0, den = 0;
-  combined.forEach((y,x) => { num += (x-xMean)*(y-yMean); den += (x-xMean)*(x-xMean); });
-  const slope = den ? num/den : 0;
-  const intercept = yMean - slope * xMean;
-
   const forecastCount = 3;
-  const allVals = [...combined];
-  for (let i = 0; i < forecastCount; i++) allVals.push(Math.max(0, Math.round(intercept + slope*(n+i))));
+  const fc = smartForecast(combined, forecastCount);
+  const allVals = [...combined, ...fc.forecasts];
   const maxVal = Math.max(...allVals, 1);
 
-  let barsHtml = '<div class="an-bar-row">';
-  for (let i = 0; i < allVals.length; i++) {
-    const val = allVals[i];
-    const pct = Math.max((val/maxVal)*100, 4);
-    const isForecast = i >= n;
-    const bg = isForecast ? 'transparent' : (i === n-1 ? '#0D3D20' : '#D1FAE5');
-    const border = isForecast ? '2px dashed #0D3D20' : 'none';
-    barsHtml += `<div class="an-bar" style="height:${pct}%;background:${bg};border:${border};border-radius:4px;" data-tip="${isForecast?'Forecast':labels[i]}: ${cur}${val}"></div>`;
+  var barsHtml = '<div class="an-bar-row">';
+  for (var i = 0; i < allVals.length; i++) {
+    var val = allVals[i];
+    var pct = Math.max((val/maxVal)*100, 4);
+    var isForecast = i >= combined.length;
+    var bg = isForecast ? 'transparent' : (i === combined.length-1 ? '#0D3D20' : '#D1FAE5');
+    var border = isForecast ? '2px dashed #0D3D20' : 'none';
+    barsHtml += '<div class="an-bar" style="height:' + pct + '%;background:' + bg + ';border:' + border + ';border-radius:4px;" data-tip="' + (isForecast?'Forecast':lbls[i]) + ': ' + cur + val + '"></div>';
   }
   barsHtml += '</div>';
   $('master-trend-chart').innerHTML = barsHtml;
 
-  const allLabels = [...labels];
-  for (let i = 0; i < forecastCount; i++) allLabels.push('F'+(i+1));
-  $('master-trend-labels').innerHTML = allLabels.map(l=>`<span>${l}</span>`).join('');
+  var allLabels = lbls.slice();
+  for (var j = 0; j < forecastCount; j++) allLabels.push('F'+(j+1));
+  $('master-trend-labels').innerHTML = allLabels.map(function(l){ return '<span>'+l+'</span>'; }).join('');
 
-  const avgW = yMean;
-  const projected = Math.round(intercept + slope * n);
-  const trendDir = slope > 20 ? 'upward' : slope < -20 ? 'downward' : 'stable';
-  const trendColor = slope > 20 ? '#16A34A' : slope < -20 ? '#DC2626' : '#D97706';
-  const trendIcon = slope > 20 ? '&#9650;' : slope < -20 ? '&#9660;' : '&#9654;';
-  $('master-trend-summary').innerHTML = `
-    <div style="display:flex;gap:12px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
-        <div style="font-size:11px;color:#166534;">Weekly avg (combined)</div>
-        <div style="font-size:18px;font-weight:700;color:#166534;">${cur}${Math.round(avgW).toLocaleString()}</div>
-      </div>
-      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
-        <div style="font-size:11px;color:#166534;">Projected next week</div>
-        <div style="font-size:18px;font-weight:700;color:#166534;">${cur}${projected.toLocaleString()}</div>
-      </div>
-      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
-        <div style="font-size:11px;color:#166534;">Combined trend</div>
-        <div style="font-size:18px;font-weight:700;color:${trendColor};">${trendIcon} ${trendDir}</div>
-      </div>
-    </div>`;
+  var confColors = { high: '#16A34A', medium: '#D97706', low: '#DC2626' };
+  var confBg = { high: '#F0FDF4', medium: '#FFF7ED', low: '#FEF2F2' };
+  var trendDir = fc.slope > 20 ? 'upward' : fc.slope < -20 ? 'downward' : 'stable';
+  var trendColor = fc.slope > 20 ? '#16A34A' : fc.slope < -20 ? '#DC2626' : '#D97706';
+  var trendIcon = fc.slope > 20 ? '&#9650;' : fc.slope < -20 ? '&#9660;' : '&#9654;';
+
+  $('master-trend-summary').innerHTML = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
+      '<div style="font-size:11px;color:#166534;">Weekly avg (combined)</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#166534;">' + cur + Math.round(fc.yMean).toLocaleString() + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
+      '<div style="font-size:11px;color:#166534;">Next week forecast</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#166534;">' + cur + fc.forecasts[0].toLocaleString() + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
+      '<div style="font-size:11px;color:#166534;">Combined trend</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + trendColor + ';">' + trendIcon + ' ' + trendDir + '</div></div>' +
+    '<div style="flex:1;min-width:110px;padding:10px;background:' + confBg[fc.confidence] + ';border-radius:8px;border:1px solid ' + confColors[fc.confidence] + '40;">' +
+      '<div style="font-size:11px;color:' + confColors[fc.confidence] + ';">Confidence</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + confColors[fc.confidence] + ';">' + fc.confidence.charAt(0).toUpperCase() + fc.confidence.slice(1) + '</div></div>' +
+    '</div>' +
+    '<div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;">' +
+      '<div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:6px;">Forecast reasoning</div>' +
+      fc.reasons.map(function(r) { return '<div style="font-size:12px;color:#6B7280;padding:2px 0;display:flex;gap:6px;"><span style="color:#0D3D20;">&#8226;</span>' + r + '</div>'; }).join('') +
+    '</div>';
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
