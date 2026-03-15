@@ -566,21 +566,39 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
   try {
     const now = new Date();
     const range = req.query.range || '30d';
-    const rangeDays = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === 'ytd' ? Math.floor((now - new Date(now.getFullYear(),0,1)) / (24*60*60*1000)) : 30;
-    const startDate = new Date(now - rangeDays*24*60*60*1000).toISOString();
-    const prevStartDate = new Date(now - rangeDays*2*24*60*60*1000).toISOString();
-    const prevEndDate = new Date(now - rangeDays*24*60*60*1000).toISOString();
+
+    // CHANGE 1: Support custom date range via startDate and endDate query params
+    const customStart = req.query.startDate;
+    const customEnd = req.query.endDate;
+
+    let rangeDays, startDate, endDate;
+    if (customStart && customEnd) {
+      startDate = new Date(customStart).toISOString();
+      endDate = new Date(customEnd).toISOString();
+      rangeDays = Math.ceil((new Date(customEnd) - new Date(customStart)) / (24*60*60*1000));
+    } else {
+      rangeDays = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === 'ytd' ? Math.floor((now - new Date(now.getFullYear(),0,1)) / (24*60*60*1000)) : 30;
+      startDate = new Date(now - rangeDays*24*60*60*1000).toISOString();
+      endDate = now.toISOString();
+    }
+
+    const prevStartDate = new Date(new Date(startDate).getTime() - rangeDays*24*60*60*1000).toISOString();
+    const prevEndDate = startDate;
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
     const locFilter = CONFIG.squareLocId ? [CONFIG.squareLocId] : undefined;
 
-    // Fetch current + previous period orders in parallel
-    const [ordersRes, prevOrdersRes] = await Promise.all([
+    // CHANGE 2: Year-over-year fetch — same period last year
+    const yoyStart = new Date(new Date(startDate).setFullYear(new Date(startDate).getFullYear() - 1)).toISOString();
+    const yoyEnd = new Date(new Date(endDate).setFullYear(new Date(endDate).getFullYear() - 1)).toISOString();
+
+    // Fetch current + previous period + YoY orders in parallel
+    const [ordersRes, prevOrdersRes, yoyOrdersRes] = await Promise.all([
       fetchWithTimeout(`${SQ_BASE}/orders/search`, {
         method: 'POST',
         headers: sqHeaders(),
         body: JSON.stringify({
           location_ids: locFilter,
-          query: { filter: { date_time_filter: { created_at: { start_at: startDate, end_at: now.toISOString() } }, state_filter: { states: ['COMPLETED'] } }, sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' } },
+          query: { filter: { date_time_filter: { created_at: { start_at: startDate, end_at: endDate } }, state_filter: { states: ['COMPLETED'] } }, sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' } },
           limit: 500,
         }),
       }, 10000),
@@ -593,6 +611,15 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
           limit: 500,
         }),
       }, 10000),
+      fetchWithTimeout(`${SQ_BASE}/orders/search`, {
+        method: 'POST',
+        headers: sqHeaders(),
+        body: JSON.stringify({
+          location_ids: locFilter,
+          query: { filter: { date_time_filter: { created_at: { start_at: yoyStart, end_at: yoyEnd } }, state_filter: { states: ['COMPLETED'] } } },
+          limit: 500,
+        }),
+      }, 10000),
     ]);
 
     const ordersData = await ordersRes.json();
@@ -601,8 +628,10 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       return res.status(ordersRes.status || 502).json({ live: false, error: ordersData.errors[0]?.detail || ordersData.errors[0]?.code || 'Square API error', errors: ordersData.errors });
     }
     const prevData = await prevOrdersRes.json();
+    const yoyData = await yoyOrdersRes.json();
     const orders = ordersData.orders || [];
     const prevOrders = prevData.orders || [];
+    const yoyOrders = (yoyData.orders || []); // Handle gracefully if YoY fetch fails
 
     // Previous period metrics for comparison
     const prevRevenue = prevOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
@@ -630,9 +659,10 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
     const todayOrders = orders.filter(o => o.created_at >= todayStart);
     const todayRevenue = todayOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
 
-    // Weekly revenue breakdown
+    // Weekly revenue breakdown — dynamic bucket count based on range
     const weeklyRevenue = [];
-    for (let i = 4; i >= 0; i--) {
+    const totalWeeks = Math.max(1, Math.ceil(rangeDays / 7));
+    for (let i = totalWeeks - 1; i >= 0; i--) {
       const wStart = new Date(now - (i+1)*7*24*60*60*1000);
       const wEnd = new Date(now - i*7*24*60*60*1000);
       const wOrders = orders.filter(o => {
@@ -640,7 +670,9 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
         return d >= wStart && d < wEnd;
       });
       const wRev = wOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
-      weeklyRevenue.push({ label: `W${5-i}`, amount: Math.round(wRev * 100) / 100, orders: wOrders.length });
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const label = totalWeeks <= 6 ? `W${totalWeeks - i}` : `${monthNames[wStart.getMonth()]} ${wStart.getDate()}`;
+      weeklyRevenue.push({ label, amount: Math.round(wRev * 100) / 100, orders: wOrders.length });
     }
 
     // Top selling items
@@ -653,10 +685,35 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
         itemRevenue[name] = (itemRevenue[name] || 0) + ((li.total_money?.amount || 0) / 100);
       });
     });
+
+    // CHANGE 3: Per-item detailed analytics with growth comparison
+    const prevItemCounts = {};
+    const prevItemRevenue = {};
+    prevOrders.forEach(o => {
+      (o.line_items || []).forEach(li => {
+        const name = li.name || catalogItems[li.catalog_object_id] || 'Unknown';
+        prevItemCounts[name] = (prevItemCounts[name] || 0) + parseInt(li.quantity || '1');
+        prevItemRevenue[name] = (prevItemRevenue[name] || 0) + ((li.total_money?.amount || 0) / 100);
+      });
+    });
+
     const topItems = Object.entries(itemCounts)
       .map(([name, qty]) => ({ name, qty, revenue: Math.round((itemRevenue[name]||0)*100)/100 }))
       .sort((a,b) => b.qty - a.qty)
       .slice(0, 10);
+
+    const itemAnalytics = Object.entries(itemCounts)
+      .map(([name, qty]) => {
+        const prevQty = prevItemCounts[name] || 0;
+        const prevRev = prevItemRevenue[name] || 0;
+        const revenue = itemRevenue[name] || 0;
+        const avgPrice = qty > 0 ? Math.round((revenue / qty) * 100) / 100 : 0;
+        const prevAvgPrice = prevQty > 0 ? Math.round((prevRev / prevQty) * 100) / 100 : 0;
+        const qtyGrowth = prevQty > 0 ? Math.round(((qty - prevQty) / prevQty) * 100) : (qty > 0 ? 100 : 0);
+        const revGrowth = prevRev > 0 ? Math.round(((revenue - prevRev) / prevRev) * 100) : (revenue > 0 ? 100 : 0);
+        return { name, qty, revenue: Math.round(revenue * 100) / 100, avgPrice, prevQty, prevRevenue: Math.round(prevRev * 100) / 100, qtyGrowth, revGrowth };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
 
     // Category breakdown
     const catBreakdown = {};
@@ -677,24 +734,57 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       .map(([h, count]) => ({ hour: parseInt(h), count }))
       .sort((a,b) => b.count - a.count);
 
+    // CHANGE 4: Hourly heatmap data — track hour and day-of-week
+    const heatmapData = {};
+    orders.forEach(o => {
+      const d = new Date(o.created_at);
+      const hour = d.getHours();
+      const day = d.getDay();
+      const key = `${day}-${hour}`;
+      heatmapData[key] = (heatmapData[key] || 0) + 1;
+    });
+    const hourlyHeatmap = Object.entries(heatmapData)
+      .map(([key, count]) => {
+        const [day, hour] = key.split('-').map(x => parseInt(x));
+        return { day, hour, count };
+      })
+      .sort((a, b) => a.day !== b.day ? a.day - b.day : a.hour - b.hour);
+
     // Discounts & comps
     const totalDiscounts = orders.reduce((a, o) => {
       const disc = (o.total_discount_money?.amount || 0) / 100;
       return a + disc;
     }, 0);
 
-    // Daily revenue (dynamic: show last N days based on range, max 14 bars)
+    // Daily revenue — for short ranges show days, for long ranges aggregate into periods
     const dailyRevenue = [];
-    const dailyDays = Math.min(rangeDays, 14);
-    for (let i = dailyDays - 1; i >= 0; i--) {
-      const dStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const dEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i + 1);
-      const dOrders = orders.filter(o => { const d = new Date(o.created_at); return d >= dStart && d < dEnd; });
-      const dRev = dOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
-      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const label = dailyDays <= 7 ? dayNames[dStart.getDay()] : `${monthNames[dStart.getMonth()]} ${dStart.getDate()}`;
-      dailyRevenue.push({ label, amount: Math.round(dRev*100)/100, orders: dOrders.length, date: dStart.toISOString().split('T')[0] });
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    if (rangeDays <= 14) {
+      // Show individual days
+      for (let i = rangeDays - 1; i >= 0; i--) {
+        const dStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        const dEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i + 1);
+        const dOrders = orders.filter(o => { const d = new Date(o.created_at); return d >= dStart && d < dEnd; });
+        const dRev = dOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+        const label = rangeDays <= 7 ? dayNames[dStart.getDay()] : `${monthNames[dStart.getMonth()]} ${dStart.getDate()}`;
+        dailyRevenue.push({ label, amount: Math.round(dRev*100)/100, orders: dOrders.length, date: dStart.toISOString().split('T')[0] });
+      }
+    } else {
+      // Aggregate into ~10-14 equal periods
+      const buckets = Math.min(14, Math.max(8, Math.ceil(rangeDays / 7)));
+      const bucketSize = Math.ceil(rangeDays / buckets);
+      for (let b = 0; b < buckets; b++) {
+        const bStartDay = rangeDays - (b + 1) * bucketSize;
+        const bEndDay = rangeDays - b * bucketSize;
+        const bStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - Math.max(bEndDay, 0));
+        const bEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - Math.max(bStartDay, 0));
+        const bOrders = orders.filter(o => { const d = new Date(o.created_at); return d >= bStart && d < bEnd; });
+        const bRev = bOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+        const label = `${monthNames[bStart.getMonth()]} ${bStart.getDate()}`;
+        dailyRevenue.push({ label, amount: Math.round(bRev*100)/100, orders: bOrders.length, date: bStart.toISOString().split('T')[0] });
+      }
+      dailyRevenue.reverse();
     }
 
     // Customer frequency (unique customers)
@@ -708,6 +798,22 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
     const orderGrowth = prevOrderCount > 0 ? Math.round(((totalOrders - prevOrderCount) / prevOrderCount) * 100) : 0;
     const avgGrowth = prevAvgOrder > 0 ? Math.round(((avgOrderValue - prevAvgOrder) / prevAvgOrder) * 100) : 0;
 
+    // CHANGE 5: Year-over-year data
+    let yoyRevenue = null, yoyOrderCount = null, yoyAvgOrder = null, yoyRevGrowth = null, yoyOrderGrowth = null;
+    try {
+      if (yoyOrders && yoyOrders.length !== undefined) {
+        yoyRevenue = yoyOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+        yoyOrderCount = yoyOrders.length;
+        yoyAvgOrder = yoyOrderCount > 0 ? Math.round(yoyRevenue / yoyOrderCount * 100) / 100 : 0;
+        yoyRevGrowth = yoyRevenue > 0 ? Math.round(((totalRevenue - yoyRevenue) / yoyRevenue) * 100) : 0;
+        yoyOrderGrowth = yoyOrderCount > 0 ? Math.round(((totalOrders - yoyOrderCount) / yoyOrderCount) * 100) : 0;
+        yoyRevenue = Math.round(yoyRevenue * 100) / 100;
+      }
+    } catch (yoyErr) {
+      console.error('[kitchen] YoY calculation error:', yoyErr.message);
+      // Leave as null values
+    }
+
     res.json({
       live: true,
       range, rangeDays,
@@ -719,6 +825,8 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       weeklyRevenue,
       dailyRevenue,
       topItems,
+      itemAnalytics,
+      hourlyHeatmap,
       peakHours: peakHours.slice(0, 8),
       totalDiscounts: Math.round(totalDiscounts * 100) / 100,
       uniqueCustomers,
@@ -730,6 +838,12 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       prevOrders: prevOrderCount,
       prevAvgOrder,
       revGrowth, orderGrowth, avgGrowth,
+      // Year-over-year data
+      yoyRevenue,
+      yoyOrders: yoyOrderCount,
+      yoyAvgOrder,
+      yoyRevGrowth,
+      yoyOrderGrowth,
     });
   } catch (err) {
     console.error('[kitchen]', err.message);
