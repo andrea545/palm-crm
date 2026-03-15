@@ -99,13 +99,26 @@ app.use(express.static(__dirname));
 // ─── MindBody token cache ─────────────────────────────────────────────────────
 let tokenCache = { token: null, expires: 0 };
 
+async function fetchWithTimeout(url, options, ms=5000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
+    return res;
+  } catch(e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
 async function getMBToken() {
   if (tokenCache.token && Date.now() < tokenCache.expires) return tokenCache.token;
-  const res = await fetch(`${MB_BASE}/usertoken/issue`, {
+  const res = await fetchWithTimeout(`${MB_BASE}/usertoken/issue`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId },
     body: JSON.stringify({ Username: CONFIG.mbUsername, Password: CONFIG.mbPassword }),
-  });
+  }, 5000);
   const data = await res.json();
   if (!data.AccessToken) throw new Error('MB auth failed');
   tokenCache = { token: data.AccessToken, expires: Date.now() + 55 * 60 * 1000 };
@@ -119,11 +132,11 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
     const mbPath = req.params[0];
     const query = new URLSearchParams(req.query).toString();
     const url = `${MB_BASE}/${mbPath}${query ? '?' + query : ''}`;
-    const mbRes = await fetch(url, {
+    const mbRes = await fetchWithTimeout(url, {
       method: req.method,
       headers: { 'Content-Type': 'application/json', 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': token },
       body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body),
-    });
+    }, 8000);
     const data = await mbRes.json();
     res.status(mbRes.status).json(data);
   } catch (err) {
