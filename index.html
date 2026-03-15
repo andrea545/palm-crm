@@ -220,8 +220,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="master-load" class="loading"><div class="spin"></div>Loading business overview...</div>
       <div id="master-err" class="err-box" style="display:none;"></div>
       <div id="master-body" style="display:none;">
+        <!-- Time frame selector -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="display:flex;gap:4px;">
+            <button class="btn tf-master" onclick="setMasterPeriod('7d',this)" id="master-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('30d',this)" id="master-30d" style="font-size:11px;padding:4px 12px;background:#0D3D20;color:#fff;border-color:#0D3D20;">30 days</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('90d',this)" id="master-90d" style="font-size:11px;padding:4px 12px;">3 months</button>
+            <button class="btn tf-master" onclick="setMasterPeriod('ytd',this)" id="master-ytd" style="font-size:11px;padding:4px 12px;">Year to date</button>
+          </div>
+          <div style="font-size:11px;color:#6B7280;" id="master-updated"></div>
+        </div>
         <!-- Combined KPIs -->
         <div class="stats" id="master-kpis"></div>
+        <!-- Combined trend + forecast -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Combined sales trend & forecast
+            <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Dashed = projected</span>
+          </div>
+          <div id="master-trend-chart" style="height:160px;"></div>
+          <div id="master-trend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
+          <div id="master-trend-summary" style="margin-top:10px;"></div>
+        </div>
         <!-- Revenue comparison -->
         <div class="g2">
           <div class="card">
@@ -291,14 +311,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <!-- Period selector -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <div style="display:flex;gap:4px;">
-            <button class="btn" onclick="setAnPeriod('7d',this)" id="an-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
-            <button class="btn" onclick="setAnPeriod('30d',this)" id="an-30d" style="font-size:11px;padding:4px 12px;background:#16A34A;color:#fff;border-color:#16A34A;">30 days</button>
-            <button class="btn" onclick="setAnPeriod('90d',this)" id="an-90d" style="font-size:11px;padding:4px 12px;">90 days</button>
+            <button class="btn tf-an" onclick="setAnPeriod('7d',this)" id="an-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
+            <button class="btn tf-an" onclick="setAnPeriod('30d',this)" id="an-30d" style="font-size:11px;padding:4px 12px;background:#16A34A;color:#fff;border-color:#16A34A;">30 days</button>
+            <button class="btn tf-an" onclick="setAnPeriod('90d',this)" id="an-90d" style="font-size:11px;padding:4px 12px;">3 months</button>
+            <button class="btn tf-an" onclick="setAnPeriod('ytd',this)" id="an-ytd" style="font-size:11px;padding:4px 12px;">Year to date</button>
           </div>
           <div style="font-size:11px;color:#6B7280;" id="an-updated"></div>
         </div>
         <!-- KPI row -->
         <div class="an-grid" id="an-kpis"></div>
+        <!-- Sales trend + forecast -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Sales trend & forecast
+            <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Dashed = projected</span>
+          </div>
+          <div id="an-trend-chart" style="height:160px;"></div>
+          <div id="an-trend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
+          <div id="an-trend-summary" style="margin-top:10px;"></div>
+        </div>
         <!-- Charts row -->
         <div class="g2">
           <div class="card">
@@ -353,13 +384,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="kit-body" style="display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <div style="display:flex;gap:4px;">
-            <button class="btn" onclick="setKitPeriod('7d',this)" id="kit-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
-            <button class="btn" onclick="setKitPeriod('30d',this)" id="kit-30d" style="font-size:11px;padding:4px 12px;background:#D97706;color:#fff;border-color:#D97706;">30 days</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('7d',this)" id="kit-7d" style="font-size:11px;padding:4px 12px;">7 days</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('30d',this)" id="kit-30d" style="font-size:11px;padding:4px 12px;background:#D97706;color:#fff;border-color:#D97706;">30 days</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('90d',this)" id="kit-90d" style="font-size:11px;padding:4px 12px;">3 months</button>
+            <button class="btn tf-kit" onclick="setKitPeriod('ytd',this)" id="kit-ytd" style="font-size:11px;padding:4px 12px;">Year to date</button>
           </div>
           <div style="font-size:11px;color:#6B7280;" id="kit-updated"></div>
         </div>
         <!-- KPIs -->
         <div class="an-grid" id="kit-kpis"></div>
+        <!-- Sales trend + forecast -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Sales trend & forecast
+            <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Dashed = projected</span>
+          </div>
+          <div id="kit-trend-chart" style="height:160px;"></div>
+          <div id="kit-trend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
+          <div id="kit-trend-summary" style="margin-top:10px;"></div>
+        </div>
         <!-- Charts -->
         <div class="g2">
           <div class="card">
@@ -805,8 +848,9 @@ let anData = null;
 
 function setAnPeriod(p, btn) {
   anPeriod = p;
-  document.querySelectorAll('#an-7d,#an-30d,#an-90d').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
+  document.querySelectorAll('.tf-an').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
   if (btn) { btn.style.background='#16A34A'; btn.style.color='#fff'; btn.style.borderColor='#16A34A'; }
+  loaded['analytics'] = false;
   loadAnalytics();
 }
 
@@ -816,7 +860,7 @@ async function loadAnalytics() {
   try {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`${PROXY}/api/analytics/overview`, {
+    const res = await fetch(`${PROXY}/api/analytics/overview?range=${anPeriod}`, {
       headers: { 'x-session-token': token },
       signal: controller.signal
     });
@@ -903,6 +947,9 @@ function renderAnalytics(d) {
       <div class="an-pill an-up">Growing</div>
     </div>`;
 
+  // Sales trend + forecast chart for Studio
+  renderAnTrend(d);
+
   // Revenue chart
   const revData = d.weeklyRevenue || d.sales || [];
   const maxRev = Math.max(...revData.map(r => r.amount || 0), 1);
@@ -974,6 +1021,70 @@ function renderAnalytics(d) {
 
   // Recommendations
   renderRecommendations(d);
+}
+
+// ─── Studio trend + forecast chart ───────────────────────────────────────────
+function renderAnTrend(d) {
+  const weekly = d.weeklyRevenue || buildWeeklyRevenue(d);
+  if (!weekly.length) {
+    $('an-trend-chart').innerHTML = '<div style="color:#9CA3AF;font-size:12px;padding:20px;">No trend data available</div>';
+    $('an-trend-labels').innerHTML = '';
+    $('an-trend-summary').innerHTML = '';
+    return;
+  }
+
+  const vals = weekly.map(r => r.amount);
+  const n = vals.length;
+  const xMean = (n - 1) / 2;
+  const yMean = vals.reduce((a,b) => a+b, 0) / n;
+  let num = 0, den = 0;
+  vals.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) * (x - xMean); });
+  const slope = den !== 0 ? num / den : 0;
+  const intercept = yMean - slope * xMean;
+
+  const forecastCount = 3;
+  const allVals = [...vals];
+  for (let i = 0; i < forecastCount; i++) {
+    allVals.push(Math.max(0, Math.round(intercept + slope * (n + i))));
+  }
+  const maxVal = Math.max(...allVals, 1);
+  const totalBars = n + forecastCount;
+
+  let barsHtml = '<div class="an-bar-row">';
+  for (let i = 0; i < totalBars; i++) {
+    const val = allVals[i];
+    const pct = Math.max((val / maxVal) * 100, 4);
+    const isForecast = i >= n;
+    const bg = isForecast ? 'transparent' : (i === n - 1 ? '#16A34A' : '#D1FAE5');
+    const border = isForecast ? '2px dashed #16A34A' : 'none';
+    barsHtml += `<div class="an-bar" style="height:${pct}%;background:${bg};border:${border};border-radius:4px;" data-tip="${isForecast ? 'Forecast' : weekly[i].label}: ${val}"></div>`;
+  }
+  barsHtml += '</div>';
+  $('an-trend-chart').innerHTML = barsHtml;
+
+  const labels = weekly.map(r => r.label);
+  for (let i = 0; i < forecastCount; i++) labels.push('F' + (i+1));
+  $('an-trend-labels').innerHTML = labels.map(l => `<span>${l}</span>`).join('');
+
+  const avgWeekly = yMean;
+  const trendDir = slope > 20 ? 'upward' : slope < -20 ? 'downward' : 'stable';
+  const trendColor = slope > 20 ? '#16A34A' : slope < -20 ? '#DC2626' : '#D97706';
+  const trendIcon = slope > 20 ? '&#9650;' : slope < -20 ? '&#9660;' : '&#9654;';
+  $('an-trend-summary').innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
+        <div style="font-size:11px;color:#166534;">Weekly average</div>
+        <div style="font-size:18px;font-weight:700;color:#166534;">\u20AC${Math.round(avgWeekly).toLocaleString()}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
+        <div style="font-size:11px;color:#166534;">Projected next week</div>
+        <div style="font-size:18px;font-weight:700;color:#166534;">\u20AC${Math.round(intercept + slope * n).toLocaleString()}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
+        <div style="font-size:11px;color:#166534;">Trend</div>
+        <div style="font-size:18px;font-weight:700;color:${trendColor};">${trendIcon} ${trendDir}</div>
+      </div>
+    </div>`;
 }
 
 function buildWeeklyRevenue(d) {
@@ -1423,7 +1534,7 @@ let kitPeriod = '30d';
 
 function setKitPeriod(p, btn) {
   kitPeriod = p;
-  document.querySelectorAll('#kit-7d,#kit-30d').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
+  document.querySelectorAll('.tf-kit').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
   if (btn) { btn.style.background='#D97706'; btn.style.color='#fff'; btn.style.borderColor='#D97706'; }
   loaded['kitchen'] = false;
   loadKitchen();
@@ -1435,7 +1546,7 @@ async function loadKitchen() {
   try {
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(`${PROXY}/api/kitchen/overview`, {
+    const res = await fetch(`${PROXY}/api/kitchen/overview?range=${kitPeriod}`, {
       headers: { 'x-session-token': token },
       signal: controller.signal
     });
@@ -1484,16 +1595,29 @@ function getDemoKitchen() {
 }
 
 function renderKitchen(d) {
-  $('kit-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${d.live ? 'Live from Square' : 'Demo data'}`;
+  const rangeLabel = {
+    '7d':'7 days','30d':'30 days','90d':'3 months','ytd':'Year to date'
+  }[d.range || kitPeriod] || '30 days';
+  $('kit-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${d.live ? 'Live from Square' : 'Demo data'} · ${rangeLabel}`;
   const cur = d.currency === 'EUR' ? '\u20AC' : '$';
 
-  // KPIs
+  // Growth arrows helper
+  function gPill(val, label) {
+    if (val === undefined || val === null) return `<div class="an-pill an-flat">${label}</div>`;
+    const cls = val > 0 ? 'an-up' : val < 0 ? 'an-down' : 'an-flat';
+    return `<div class="an-pill ${cls}">${val > 0 ? '+' : ''}${val}% vs prior</div>`;
+  }
+
+  // KPIs with comparison data
   $('kit-kpis').innerHTML = `
-    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Monthly revenue</div><div class="stat-v">${cur}${d.totalRevenue>=1000?(d.totalRevenue/1000).toFixed(1)+'k':d.totalRevenue}</div><div class="an-pill an-up">30 days</div></div>
+    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Revenue</div><div class="stat-v">${cur}${d.totalRevenue>=1000?(d.totalRevenue/1000).toFixed(1)+'k':d.totalRevenue}</div>${gPill(d.revGrowth, rangeLabel)}</div>
     <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Today</div><div class="stat-v">${cur}${d.todayRevenue}</div><div class="an-pill an-up">${d.todayOrders} orders</div></div>
-    <div class="an-stat"><div class="an-stat-ico">#</div><div class="stat-l">Total orders</div><div class="stat-v">${d.totalOrders}</div><div class="an-pill an-flat">30 days</div></div>
-    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Avg order</div><div class="stat-v">${cur}${d.avgOrderValue}</div><div class="an-pill ${d.avgOrderValue>12?'an-up':'an-flat'}">${d.avgOrderValue>12?'Good':'Room to grow'}</div></div>
+    <div class="an-stat"><div class="an-stat-ico">#</div><div class="stat-l">Total orders</div><div class="stat-v">${d.totalOrders}</div>${gPill(d.orderGrowth, rangeLabel)}</div>
+    <div class="an-stat"><div class="an-stat-ico">${cur}</div><div class="stat-l">Avg order</div><div class="stat-v">${cur}${d.avgOrderValue}</div>${gPill(d.avgGrowth, d.avgOrderValue>12?'Good':'Room to grow')}</div>
     <div class="an-stat"><div class="an-stat-ico">%</div><div class="stat-l">Repeat rate</div><div class="stat-v">${d.repeatRate}%</div><div class="an-pill ${d.repeatRate>25?'an-up':'an-down'}">${d.repeatCustomers} regulars</div></div>`;
+
+  // Sales trend + forecast chart
+  renderKitTrend(d, cur);
 
   // Daily revenue chart
   const dailyData = d.dailyRevenue || [];
@@ -1558,18 +1682,101 @@ function renderKitchen(d) {
     </div>`).join('');
 }
 
+// ─── Kitchen trend + forecast chart ──────────────────────────────────────────
+function renderKitTrend(d, cur) {
+  const daily = d.dailyRevenue || [];
+  if (!daily.length) {
+    $('kit-trend-chart').innerHTML = '<div style="color:#9CA3AF;font-size:12px;padding:20px;">No trend data available</div>';
+    $('kit-trend-labels').innerHTML = '';
+    $('kit-trend-summary').innerHTML = '';
+    return;
+  }
+
+  // Simple linear regression for forecasting
+  const vals = daily.map(r => r.amount);
+  const n = vals.length;
+  const xMean = (n - 1) / 2;
+  const yMean = vals.reduce((a,b) => a+b, 0) / n;
+  let num = 0, den = 0;
+  vals.forEach((y, x) => { num += (x - xMean) * (y - yMean); den += (x - xMean) * (x - xMean); });
+  const slope = den !== 0 ? num / den : 0;
+  const intercept = yMean - slope * xMean;
+
+  // Forecast next 3 points
+  const forecastCount = 3;
+  const allVals = [...vals];
+  const forecastVals = [];
+  for (let i = 0; i < forecastCount; i++) {
+    const fv = Math.max(0, Math.round((intercept + slope * (n + i)) * 100) / 100);
+    forecastVals.push(fv);
+    allVals.push(fv);
+  }
+  const maxVal = Math.max(...allVals, 1);
+  const totalBars = n + forecastCount;
+
+  // Build bars: actual + forecast (dashed border)
+  let barsHtml = '<div class="an-bar-row">';
+  for (let i = 0; i < totalBars; i++) {
+    const val = allVals[i];
+    const pct = Math.max((val / maxVal) * 100, 4);
+    const isForecast = i >= n;
+    const bg = isForecast ? 'transparent' : (i === n - 1 ? '#D97706' : '#FEF3C7');
+    const border = isForecast ? '2px dashed #D97706' : 'none';
+    const tip = isForecast ? `Forecast: ${cur}${val}` : `${daily[i].label}: ${cur}${val}`;
+    barsHtml += `<div class="an-bar" style="height:${pct}%;background:${bg};border:${border};border-radius:4px;" data-tip="${tip}"></div>`;
+  }
+  barsHtml += '</div>';
+  $('kit-trend-chart').innerHTML = barsHtml;
+
+  // Labels
+  const labels = daily.map(r => r.label);
+  for (let i = 0; i < forecastCount; i++) labels.push('F' + (i+1));
+  $('kit-trend-labels').innerHTML = labels.map(l => `<span>${l}</span>`).join('');
+
+  // Summary
+  const avgDaily = yMean;
+  const projectedPeriod = Math.round(avgDaily * (d.rangeDays || 30));
+  const trendDir = slope > 0.5 ? 'upward' : slope < -0.5 ? 'downward' : 'stable';
+  const trendColor = slope > 0.5 ? '#16A34A' : slope < -0.5 ? '#DC2626' : '#D97706';
+  const trendIcon = slope > 0.5 ? '&#9650;' : slope < -0.5 ? '&#9660;' : '&#9654;';
+  $('kit-trend-summary').innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:120px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">
+        <div style="font-size:11px;color:#9A3412;">Daily average</div>
+        <div style="font-size:18px;font-weight:700;color:#9A3412;">${cur}${Math.round(avgDaily)}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">
+        <div style="font-size:11px;color:#9A3412;">Projected (next period)</div>
+        <div style="font-size:18px;font-weight:700;color:#9A3412;">${cur}${projectedPeriod >= 1000 ? (projectedPeriod/1000).toFixed(1)+'k' : projectedPeriod}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:10px;background:#FFF7ED;border-radius:8px;border:1px solid #FED7AA;">
+        <div style="font-size:11px;color:#9A3412;">Trend</div>
+        <div style="font-size:18px;font-weight:700;color:${trendColor};">${trendIcon} ${trendDir}</div>
+      </div>
+    </div>`;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MASTER DASHBOARD — Combined business view
 // ══════════════════════════════════════════════════════════════════════════════
+let masterPeriod = '30d';
+function setMasterPeriod(p, btn) {
+  masterPeriod = p;
+  document.querySelectorAll('.tf-master').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
+  if (btn) { btn.style.background='#0D3D20'; btn.style.color='#fff'; btn.style.borderColor='#0D3D20'; }
+  loaded['master'] = false;
+  loadMaster();
+}
+
 async function loadMaster() {
   ld('master', true);
   $('master-err').style.display = 'none';
   let studioData = null, kitchenData = null;
 
-  // Fetch both in parallel
+  // Fetch both in parallel with range
   const [studioRes, kitchenRes] = await Promise.allSettled([
-    fetch(`${PROXY}/api/analytics/overview`, { headers:{'x-session-token':token} }).then(r=>r.json()).catch(()=>null),
-    fetch(`${PROXY}/api/kitchen/overview`, { headers:{'x-session-token':token} }).then(r=>r.json()).catch(()=>null),
+    fetch(`${PROXY}/api/analytics/overview?range=${masterPeriod}`, { headers:{'x-session-token':token} }).then(r=>r.json()).catch(()=>null),
+    fetch(`${PROXY}/api/kitchen/overview?range=${masterPeriod}`, { headers:{'x-session-token':token} }).then(r=>r.json()).catch(()=>null),
   ]);
 
   studioData = studioRes.status === 'fulfilled' ? studioRes.value : null;
@@ -1592,13 +1799,16 @@ function renderMaster(studio, kitchen) {
   const kitchenRev = kitchen.totalRevenue || 0;
   const totalRev = studioRev + kitchenRev;
   const cur = '\u20AC';
+  const rangeLabel = {'7d':'7 days','30d':'30 days','90d':'3 months','ytd':'Year to date'}[masterPeriod] || '30 days';
+  $('master-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${rangeLabel}`;
 
   // KPIs
+  const kitGrowth = kitchen.revGrowth;
   $('master-kpis').innerHTML = `
     <div class="stat" style="border-left:3px solid #0D3D20;">
       <div class="stat-l">Combined revenue</div>
       <div class="stat-v">${cur}${totalRev>=1000?(totalRev/1000).toFixed(1)+'k':totalRev}</div>
-      <div class="stat-d">Last 30 days</div>
+      <div class="stat-d">${rangeLabel}</div>
     </div>
     <div class="stat" style="border-left:3px solid #0D3D20;">
       <div class="stat-l">Lagree Studio</div>
@@ -1615,6 +1825,9 @@ function renderMaster(studio, kitchen) {
       <div class="stat-v">${totalRev>0?Math.round(studioRev/totalRev*100):50}/${totalRev>0?Math.round(kitchenRev/totalRev*100):50}</div>
       <div class="stat-d">Studio / Kitchen</div>
     </div>`;
+
+  // Combined trend + forecast
+  renderMasterTrend(studio, kitchen, cur);
 
   // Studio revenue chart
   const studioWeeks = studio.weeklyRevenue || buildWeeklyRevenue(studio);
@@ -1681,6 +1894,78 @@ function renderMaster(studio, kitchen) {
     <div class="an-rec" style="display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="nav('emails',document.querySelectorAll('.ni')[9])">
       <div class="an-rec-ico" style="background:#DBEAFE;">&#9993;</div>
       <div><div style="font-size:13px;font-weight:500;">Email Campaigns</div><div style="font-size:11px;color:#6B7280;">Send to studio clients or all</div></div>
+    </div>`;
+}
+
+// ─── Master trend + forecast ─────────────────────────────────────────────────
+function renderMasterTrend(studio, kitchen, cur) {
+  const sWeeks = studio.weeklyRevenue || buildWeeklyRevenue(studio);
+  const kWeeks = kitchen.weeklyRevenue || [];
+  const maxLen = Math.max(sWeeks.length, kWeeks.length);
+  if (!maxLen) {
+    $('master-trend-chart').innerHTML = '<div style="color:#9CA3AF;font-size:12px;padding:20px;">No trend data</div>';
+    $('master-trend-labels').innerHTML = '';
+    $('master-trend-summary').innerHTML = '';
+    return;
+  }
+
+  // Build combined values
+  const combined = [];
+  const labels = [];
+  for (let i = 0; i < maxLen; i++) {
+    combined.push(((sWeeks[i]||{}).amount||0) + ((kWeeks[i]||{}).amount||0));
+    labels.push((sWeeks[i]||kWeeks[i]||{}).label||('W'+(i+1)));
+  }
+
+  // Linear regression on combined
+  const n = combined.length;
+  const xMean = (n - 1) / 2;
+  const yMean = combined.reduce((a,b)=>a+b,0) / n;
+  let num = 0, den = 0;
+  combined.forEach((y,x) => { num += (x-xMean)*(y-yMean); den += (x-xMean)*(x-xMean); });
+  const slope = den ? num/den : 0;
+  const intercept = yMean - slope * xMean;
+
+  const forecastCount = 3;
+  const allVals = [...combined];
+  for (let i = 0; i < forecastCount; i++) allVals.push(Math.max(0, Math.round(intercept + slope*(n+i))));
+  const maxVal = Math.max(...allVals, 1);
+
+  let barsHtml = '<div class="an-bar-row">';
+  for (let i = 0; i < allVals.length; i++) {
+    const val = allVals[i];
+    const pct = Math.max((val/maxVal)*100, 4);
+    const isForecast = i >= n;
+    const bg = isForecast ? 'transparent' : (i === n-1 ? '#0D3D20' : '#D1FAE5');
+    const border = isForecast ? '2px dashed #0D3D20' : 'none';
+    barsHtml += `<div class="an-bar" style="height:${pct}%;background:${bg};border:${border};border-radius:4px;" data-tip="${isForecast?'Forecast':labels[i]}: ${cur}${val}"></div>`;
+  }
+  barsHtml += '</div>';
+  $('master-trend-chart').innerHTML = barsHtml;
+
+  const allLabels = [...labels];
+  for (let i = 0; i < forecastCount; i++) allLabels.push('F'+(i+1));
+  $('master-trend-labels').innerHTML = allLabels.map(l=>`<span>${l}</span>`).join('');
+
+  const avgW = yMean;
+  const projected = Math.round(intercept + slope * n);
+  const trendDir = slope > 20 ? 'upward' : slope < -20 ? 'downward' : 'stable';
+  const trendColor = slope > 20 ? '#16A34A' : slope < -20 ? '#DC2626' : '#D97706';
+  const trendIcon = slope > 20 ? '&#9650;' : slope < -20 ? '&#9660;' : '&#9654;';
+  $('master-trend-summary').innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
+        <div style="font-size:11px;color:#166534;">Weekly avg (combined)</div>
+        <div style="font-size:18px;font-weight:700;color:#166534;">${cur}${Math.round(avgW).toLocaleString()}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
+        <div style="font-size:11px;color:#166534;">Projected next week</div>
+        <div style="font-size:18px;font-weight:700;color:#166534;">${cur}${projected.toLocaleString()}</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">
+        <div style="font-size:11px;color:#166534;">Combined trend</div>
+        <div style="font-size:18px;font-weight:700;color:${trendColor};">${trendIcon} ${trendDir}</div>
+      </div>
     </div>`;
 }
 
