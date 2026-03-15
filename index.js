@@ -85,7 +85,13 @@ app.get('/auth/me', (req, res) => {
   res.json({ name: session.name, role: session.role, username: session.username });
 });
 
-// ─── Serve static files ─────────────────────────────────────────────────────
+// ─── Serve static files with cache-busting headers ──────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.use(express.static(__dirname));
