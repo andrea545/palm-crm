@@ -18,6 +18,8 @@ const CONFIG = {
   sendgridKey:    process.env.SENDGRID_API_KEY   || '',
   fromEmail:      process.env.FROM_EMAIL         || 'hello@palmsportingclub.com',
   fromName:       process.env.FROM_NAME          || 'Palm Sporting Club',
+  squareToken:    process.env.SQUARE_ACCESS_TOKEN || '',
+  squareLocId:    process.env.SQUARE_LOCATION_ID  || '',
   port:           process.env.PORT               || 3000,
 };
 const MB_BASE = 'https://api.mindbodyonline.com/public/v6';
@@ -521,10 +523,208 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SQUARE API — Palm Kitchen restaurant
+// ══════════════════════════════════════════════════════════════════════════════
+const SQ_BASE = 'https://connect.squareup.com/v2';
+
+function sqHeaders() {
+  return {
+    'Authorization': `Bearer ${CONFIG.squareToken}`,
+    'Content-Type': 'application/json',
+    'Square-Version': '2024-01-18',
+  };
+}
+
+// Square proxy for arbitrary calls
+app.all('/api/sq/*', requireAuth, async (req, res) => {
+  if (!CONFIG.squareToken) return res.status(400).json({ error: 'Square not configured — add SQUARE_ACCESS_TOKEN to Railway env vars', live: false });
+  try {
+    const sqPath = req.params[0];
+    const query = new URLSearchParams(req.query).toString();
+    const url = `${SQ_BASE}/${sqPath}${query ? '?' + query : ''}`;
+    const sqRes = await fetchWithTimeout(url, {
+      method: req.method,
+      headers: sqHeaders(),
+      body: ['GET','HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body),
+    }, 8000);
+    const data = await sqRes.json();
+    res.status(sqRes.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// Kitchen analytics overview
+app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
+  if (!CONFIG.squareToken) return res.json({ live: false, error: 'Square not configured' });
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now - 30*24*60*60*1000).toISOString();
+    const sevenDaysAgo = new Date(now - 7*24*60*60*1000).toISOString();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const locFilter = CONFIG.squareLocId ? [CONFIG.squareLocId] : undefined;
+
+    // Fetch orders (last 30 days)
+    const ordersRes = await fetchWithTimeout(`${SQ_BASE}/orders/search`, {
+      method: 'POST',
+      headers: sqHeaders(),
+      body: JSON.stringify({
+        location_ids: locFilter,
+        query: {
+          filter: {
+            date_time_filter: { created_at: { start_at: thirtyDaysAgo, end_at: now.toISOString() } },
+            state_filter: { states: ['COMPLETED'] }
+          },
+          sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' }
+        },
+        limit: 500,
+      }),
+    }, 8000);
+    const ordersData = await ordersRes.json();
+    const orders = ordersData.orders || [];
+
+    // Fetch catalog items for names
+    let catalogItems = {};
+    try {
+      const catRes = await fetchWithTimeout(`${SQ_BASE}/catalog/list?types=ITEM`, {
+        headers: sqHeaders(),
+      }, 5000);
+      const catData = await catRes.json();
+      (catData.objects || []).forEach(item => {
+        catalogItems[item.id] = item.item_data?.name || item.id;
+      });
+    } catch(e) { /* catalog optional */ }
+
+    // Calculate metrics
+    const totalRevenue = orders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+    const totalOrders = orders.length;
+    const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders * 100) / 100 : 0;
+
+    // Today's revenue
+    const todayOrders = orders.filter(o => o.created_at >= todayStart);
+    const todayRevenue = todayOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+
+    // Weekly revenue breakdown
+    const weeklyRevenue = [];
+    for (let i = 4; i >= 0; i--) {
+      const wStart = new Date(now - (i+1)*7*24*60*60*1000);
+      const wEnd = new Date(now - i*7*24*60*60*1000);
+      const wOrders = orders.filter(o => {
+        const d = new Date(o.created_at);
+        return d >= wStart && d < wEnd;
+      });
+      const wRev = wOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+      weeklyRevenue.push({ label: `W${5-i}`, amount: Math.round(wRev * 100) / 100, orders: wOrders.length });
+    }
+
+    // Top selling items
+    const itemCounts = {};
+    const itemRevenue = {};
+    orders.forEach(o => {
+      (o.line_items || []).forEach(li => {
+        const name = li.name || catalogItems[li.catalog_object_id] || 'Unknown';
+        itemCounts[name] = (itemCounts[name] || 0) + parseInt(li.quantity || '1');
+        itemRevenue[name] = (itemRevenue[name] || 0) + ((li.total_money?.amount || 0) / 100);
+      });
+    });
+    const topItems = Object.entries(itemCounts)
+      .map(([name, qty]) => ({ name, qty, revenue: Math.round((itemRevenue[name]||0)*100)/100 }))
+      .sort((a,b) => b.qty - a.qty)
+      .slice(0, 10);
+
+    // Category breakdown
+    const catBreakdown = {};
+    orders.forEach(o => {
+      (o.line_items || []).forEach(li => {
+        const cat = li.variation_name || li.name?.split(' ')[0] || 'Other';
+        catBreakdown[cat] = (catBreakdown[cat] || 0) + ((li.total_money?.amount || 0) / 100);
+      });
+    });
+
+    // Peak hours
+    const hourCounts = {};
+    orders.forEach(o => {
+      const h = new Date(o.created_at).getHours();
+      hourCounts[h] = (hourCounts[h] || 0) + 1;
+    });
+    const peakHours = Object.entries(hourCounts)
+      .map(([h, count]) => ({ hour: parseInt(h), count }))
+      .sort((a,b) => b.count - a.count);
+
+    // Discounts & comps
+    const totalDiscounts = orders.reduce((a, o) => {
+      const disc = (o.total_discount_money?.amount || 0) / 100;
+      return a + disc;
+    }, 0);
+
+    // Daily revenue (last 7 days)
+    const dailyRevenue = [];
+    for (let i = 6; i >= 0; i--) {
+      const dStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const dEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i + 1);
+      const dOrders = orders.filter(o => {
+        const d = new Date(o.created_at);
+        return d >= dStart && d < dEnd;
+      });
+      const dRev = dOrders.reduce((a, o) => a + ((o.total_money?.amount || 0) / 100), 0);
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      dailyRevenue.push({ label: dayNames[dStart.getDay()], amount: Math.round(dRev*100)/100, orders: dOrders.length });
+    }
+
+    // Customer frequency (unique customers)
+    const customerOrders = {};
+    orders.forEach(o => {
+      if (o.customer_id) {
+        customerOrders[o.customer_id] = (customerOrders[o.customer_id] || 0) + 1;
+      }
+    });
+    const uniqueCustomers = Object.keys(customerOrders).length;
+    const repeatCustomers = Object.values(customerOrders).filter(c => c > 1).length;
+
+    res.json({
+      live: true,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      todayRevenue: Math.round(todayRevenue * 100) / 100,
+      totalOrders,
+      todayOrders: todayOrders.length,
+      avgOrderValue,
+      weeklyRevenue,
+      dailyRevenue,
+      topItems,
+      peakHours: peakHours.slice(0, 8),
+      totalDiscounts: Math.round(totalDiscounts * 100) / 100,
+      uniqueCustomers,
+      repeatCustomers,
+      repeatRate: uniqueCustomers > 0 ? Math.round((repeatCustomers / uniqueCustomers) * 100) : 0,
+      currency: orders[0]?.total_money?.currency || 'EUR',
+    });
+  } catch (err) {
+    console.error('[kitchen]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// Square health check
+app.get('/api/kitchen/health', requireAuth, async (req, res) => {
+  if (!CONFIG.squareToken) return res.json({ connected: false, reason: 'No Square token configured' });
+  try {
+    const locRes = await fetchWithTimeout(`${SQ_BASE}/locations`, {
+      headers: sqHeaders(),
+    }, 5000);
+    const data = await locRes.json();
+    const locations = data.locations || [];
+    res.json({ connected: true, locations: locations.map(l => ({ id: l.id, name: l.name, status: l.status })) });
+  } catch(err) {
+    res.json({ connected: false, reason: err.message });
+  }
+});
+
 // ─── Start server ─────────────────────────────────────────────────────────────
 app.listen(CONFIG.port, () => {
   console.log(`Palm CRM running on port ${CONFIG.port}`);
   console.log(`   Auth: username=andrea password=Hello999`);
   console.log(`   Automations: 4 email triggers active`);
-  console.log(`   Analytics: /api/analytics/overview, /api/analytics/retention`);
+  console.log(`   Analytics: Studio + Kitchen + Master`);
+  console.log(`   Square: ${CONFIG.squareToken ? 'Configured' : 'Not configured (add SQUARE_ACCESS_TOKEN)'}`);
 });
