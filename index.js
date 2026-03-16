@@ -335,7 +335,7 @@ const EMAIL_TEMPLATES = {
         <div style="font-size:32px;font-weight:700;color:#5B21B6;letter-spacing:2px;">BDAY5</div>
         <div style="font-size:13px;color:#5B21B6;margin-top:6px;">5% off any class pack · Valid 14 days</div>
       </div>
-      <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100004" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Treat yourself →</a>
+      <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Treat yourself →</a>
       <p style="font-size:13px;color:#6B7280;text-align:center;">Enjoy your special day! &#127881;</p>
     `)
   }),
