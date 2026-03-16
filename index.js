@@ -92,6 +92,28 @@ app.get('/api/mb-test', async (req, res) => {
     res.json({ success: false, error: err.message, siteId: CONFIG.siteId });
   }
 });
+app.get('/api/mb-debug', async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+    const [salesRes, classesRes, clientsRes] = await Promise.all([
+      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${thirtyDaysAgo}T00:00:00&EndSaleDateTime=${today}T23:59:59&Limit=5`, { headers: mbHeaders(mbToken) }, 8000),
+      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${thirtyDaysAgo}T00:00:00&EndDateTime=${today}T23:59:59&Limit=5`, { headers: mbHeaders(mbToken) }, 8000),
+      fetchWithTimeout(`${MB_BASE}/client/clients?Limit=5`, { headers: mbHeaders(mbToken) }, 8000),
+    ]);
+    const sales = await salesRes.json();
+    const classes = await classesRes.json();
+    const clients = await clientsRes.json();
+    res.json({
+      salesCount: sales.Sales?.length || 0, salesSample: sales.Sales?.slice(0,2) || sales,
+      classesCount: classes.Classes?.length || 0, classesSample: classes.Classes?.slice(0,2) || classes,
+      clientsCount: clients.Clients?.length || 0, clientsSample: clients.Clients?.slice(0,2)?.map(c => ({ FirstName: c.FirstName, Active: c.Active, CreationDate: c.CreationDate })) || clients,
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.use(express.static(__dirname));
@@ -160,7 +182,7 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
   }
 });
 // ─── Email sending via SendGrid ───────────────────────────────────────────────
-async function sendEmail({ to, toName, subject, html }) {
+async function sendEmail({ to, toName, subject, html, category }) {
   if (!CONFIG.sendgridKey) {
     console.log(`[email] No SendGrid key — would send to ${to}: ${subject}`);
     return { ok: true, simulated: true };
@@ -173,6 +195,11 @@ async function sendEmail({ to, toName, subject, html }) {
       from: { email: CONFIG.fromEmail, name: CONFIG.fromName },
       subject,
       content: [{ type: 'text/html', value: html }],
+      tracking_settings: {
+        click_tracking: { enable: true, enable_text: false },
+        open_tracking: { enable: true },
+      },
+      categories: [category || 'automation'],
     }),
   });
   if (!res.ok) {
@@ -218,7 +245,10 @@ const EMAIL_TEMPLATES = {
         <div style="font-size:32px;font-weight:700;color:#0D3D20;letter-spacing:2px;">PALM10</div>
         <div style="font-size:13px;color:#166534;margin-top:6px;">10% off a 5 or 10-class pack · Valid 7 days</div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Shop class packs →</a>
+      <div style="display:flex;gap:10px;margin-bottom:12px;">
+        <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100004" style="flex:1;display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">5-class pack →</a>
+        <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100005" style="flex:1;display:block;background:#111827;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">10-class pack →</a>
+      </div>
       <p style="font-size:12px;color:#9CA3AF;text-align:center;">Use code PALM10 at checkout. One use per client.</p>
     `)
   }),
@@ -237,7 +267,7 @@ const EMAIL_TEMPLATES = {
           ✓ Cancel anytime
         </div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">View membership options →</a>
+      <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=40" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">View membership options →</a>
       <p style="font-size:13px;color:#6B7280;text-align:center;">Questions? Reply to this email or WhatsApp us at +34 687 28 29 94</p>
     `)
   }),
@@ -248,10 +278,10 @@ const EMAIL_TEMPLATES = {
       <p style="color:#374151;line-height:1.7;margin-bottom:16px;">You just used your last class credit — great work staying consistent!</p>
       <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Don't let your streak fade. Grab a new pack now and keep your body moving.</p>
       <div style="display:flex;gap:10px;margin-bottom:20px;">
-        <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">5-class pack →</a>
-        <a href="https://www.palmsportingclub.com/prices" style="flex:1;display:block;background:#111827;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">10-class pack →</a>
+        <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100004" style="flex:1;display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">5-class pack →</a>
+        <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100005" style="flex:1;display:block;background:#111827;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:14px;">10-class pack →</a>
       </div>
-      <p style="font-size:13px;color:#6B7280;text-align:center;">Book directly from the <a href="https://mndbdy.ly/e/5737970" style="color:#0D3D20;">Palm app</a> too.</p>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Or book a class at <a href="https://www.palmsportingclub.com/reservations" style="color:#0D3D20;">palmsportingclub.com/reservations</a></p>
     `)
   }),
   welcome: (name) => ({
@@ -264,7 +294,8 @@ const EMAIL_TEMPLATES = {
         <div style="font-size:22px;font-weight:700;color:#0D3D20;margin-bottom:4px;">3-Class Intro Pack</div>
         <div style="font-size:13px;color:#166534;">The perfect way to try Lagree at a special intro price</div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:16px;">Get your intro pack now →</a>
+      <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100016" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:8px;">Get your intro pack now →</a>
+      <a href="https://www.palmsportingclub.com/reservations" style="display:block;color:#0D3D20;text-decoration:none;padding:10px;border-radius:10px;text-align:center;font-weight:500;font-size:14px;margin-bottom:16px;border:1px solid #0D3D20;">Book your first class →</a>
       <p style="color:#374151;line-height:1.7;margin-bottom:8px;font-size:13px;"><strong>What to expect:</strong></p>
       <p style="color:#6B7280;line-height:1.8;font-size:13px;margin-bottom:20px;">
         ✓ 50-minute full-body workout on the Megaformer<br>
@@ -286,8 +317,8 @@ const EMAIL_TEMPLATES = {
         <div style="font-size:32px;font-weight:700;color:#92400E;letter-spacing:2px;">COMEBACK10</div>
         <div style="font-size:13px;color:#92400E;margin-top:6px;">10% off any class pack · Valid 14 days</div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Come back to Palm →</a>
-      <p style="font-size:13px;color:#6B7280;text-align:center;">Or book directly on the <a href="https://mndbdy.ly/e/5737970" style="color:#0D3D20;">Palm app</a>. We'd love to see you again.</p>
+      <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100004" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Come back to Palm →</a>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Or book a class at <a href="https://www.palmsportingclub.com/reservations" style="color:#0D3D20;">palmsportingclub.com/reservations</a>. We'd love to see you again.</p>
     `)
   }),
   birthday: (name) => ({
@@ -304,7 +335,7 @@ const EMAIL_TEMPLATES = {
         <div style="font-size:32px;font-weight:700;color:#5B21B6;letter-spacing:2px;">BDAY5</div>
         <div style="font-size:13px;color:#5B21B6;margin-top:6px;">5% off any class pack · Valid 14 days</div>
       </div>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Treat yourself →</a>
+      <a href="https://clients.mindbodyonline.com/classic/ws?studioid=5737970&stype=41&sTG=23&prodId=100004" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Treat yourself →</a>
       <p style="font-size:13px;color:#6B7280;text-align:center;">Enjoy your special day! &#127881;</p>
     `)
   }),
@@ -333,7 +364,7 @@ const EMAIL_TEMPLATES = {
         <p style="color:#4B5563;line-height:1.7;font-size:14px;margin:0;">Low-impact, high-intensity. Each 50-minute session engages every major muscle group through slow, controlled movements under constant tension — burning fat, building lean muscle, and improving flexibility all at once. No jumping, no jarring, no wasted movement.</p>
       </div>
       <p style="color:#374151;line-height:1.8;margin-bottom:24px;">2–3 sessions per week for the fastest results. Consistency is what separates good from extraordinary.</p>
-      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Book your next class →</a>
+      <a href="https://www.palmsportingclub.com/reservations" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Book your next class →</a>
     `)
   }),
 };
@@ -347,7 +378,7 @@ async function handleAutomations(event) {
       const email = payload.email || payload.Email;
       if (email) {
         const tpl = EMAIL_TEMPLATES.welcome(name);
-        await sendEmail({ to: email, toName: name, ...tpl });
+        await sendEmail({ to: email, toName: name, ...tpl, category: 'welcome' });
         console.log(`[automation] Welcome email sent to ${email}`);
       }
     }
@@ -358,10 +389,10 @@ async function handleAutomations(event) {
       const mbToken = await getMBToken();
       const [clientRes, servicesRes] = await Promise.all([
         fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
-          headers: { 'API-Key': CONFIG.apiKey, 'SiteId': siteId, 'Authorization': mbToken }
+          headers: mbHeaders(mbToken)
         }),
         fetch(`${MB_BASE}/client/clientservices?clientId=${clientId}`, {
-          headers: { 'API-Key': CONFIG.apiKey, 'SiteId': siteId, 'Authorization': mbToken }
+          headers: mbHeaders(mbToken)
         }),
       ]);
       const clientData = await clientRes.json();
@@ -378,12 +409,12 @@ async function handleAutomations(event) {
         const svcName = (svc.Name || '').toLowerCase();
         if (remaining === 0 && total <= 3 && svcName.includes('intro')) {
           const tpl = EMAIL_TEMPLATES.introPackComplete(name);
-          await sendEmail({ to: email, toName: name, ...tpl });
+          await sendEmail({ to: email, toName: name, ...tpl, category: 'intro_complete' });
           console.log(`[automation] Intro pack complete email sent to ${email}`);
         }
         if (remaining === 0 && total > 3 && !svcName.includes('intro') && !svcName.includes('unlimited') && !svcName.includes('membership')) {
           const tpl = EMAIL_TEMPLATES.lastCredit(name);
-          await sendEmail({ to: email, toName: name, ...tpl });
+          await sendEmail({ to: email, toName: name, ...tpl, category: 'last_credit' });
           console.log(`[automation] Last credit email sent to ${email}`);
         }
       }
@@ -409,7 +440,7 @@ async function handleAutomations(event) {
         const client = (clientData.Clients || [])[0];
         if (client && client.Email) {
           const tpl = EMAIL_TEMPLATES.membershipUpsell(client.FirstName || 'there');
-          await sendEmail({ to: client.Email, toName: client.FirstName, ...tpl });
+          await sendEmail({ to: client.Email, toName: client.FirstName, ...tpl, category: 'membership_upsell' });
           console.log(`[automation] Membership upsell email sent to ${client.Email}`);
         }
       }
@@ -452,6 +483,65 @@ app.get('/api/events/log', requireAuth, (req, res) => {
   res.json({ events: events.slice(0, 50), total: events.length });
 });
 // ─── Health ───────────────────────────────────────────────────────────────────
+// ─── SendGrid Email Stats ─────────────────────────────────────────────────
+app.get('/api/email/stats', requireAuth, async (req, res) => {
+  if (\!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', stats: [] });
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const globalRes = await fetch(`https://api.sendgrid.com/v3/stats?start_date=${startDate}&aggregated_by=day`, {
+      headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}` },
+    });
+    const globalStats = await globalRes.json();
+    const catRes = await fetch(`https://api.sendgrid.com/v3/categories/stats?start_date=${startDate}&categories=welcome,intro_complete,last_credit,membership_upsell,manual&aggregated_by=day`, {
+      headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}` },
+    });
+    const catStats = await catRes.json();
+    let totals = { sent: 0, delivered: 0, opens: 0, uniqueOpens: 0, clicks: 0, uniqueClicks: 0, bounces: 0, unsubscribes: 0 };
+    if (Array.isArray(globalStats)) {
+      for (const day of globalStats) {
+        for (const m of (day.stats || [])) {
+          const s = m.metrics || {};
+          totals.sent += s.requests || 0;
+          totals.delivered += s.delivered || 0;
+          totals.opens += s.opens || 0;
+          totals.uniqueOpens += s.unique_opens || 0;
+          totals.clicks += s.clicks || 0;
+          totals.uniqueClicks += s.unique_clicks || 0;
+          totals.bounces += s.bounces || 0;
+          totals.unsubscribes += s.unsubscribes || 0;
+        }
+      }
+    }
+    totals.openRate = totals.delivered > 0 ? Math.round((totals.uniqueOpens / totals.delivered) * 100) : 0;
+    totals.clickRate = totals.delivered > 0 ? Math.round((totals.uniqueClicks / totals.delivered) * 100) : 0;
+    let categories = {};
+    if (Array.isArray(catStats)) {
+      for (const day of catStats) {
+        for (const m of (day.stats || [])) {
+          const cat = m.name || 'unknown';
+          if (\!categories[cat]) categories[cat] = { sent: 0, delivered: 0, opens: 0, uniqueOpens: 0, clicks: 0, uniqueClicks: 0 };
+          const s = m.metrics || {};
+          categories[cat].sent += s.requests || 0;
+          categories[cat].delivered += s.delivered || 0;
+          categories[cat].opens += s.opens || 0;
+          categories[cat].uniqueOpens += s.unique_opens || 0;
+          categories[cat].clicks += s.clicks || 0;
+          categories[cat].uniqueClicks += s.unique_clicks || 0;
+        }
+      }
+    }
+    for (const cat of Object.keys(categories)) {
+      const c = categories[cat];
+      c.openRate = c.delivered > 0 ? Math.round((c.uniqueOpens / c.delivered) * 100) : 0;
+      c.clickRate = c.delivered > 0 ? Math.round((c.uniqueClicks / c.delivered) * 100) : 0;
+    }
+    res.json({ totals, categories, daily: globalStats });
+  } catch (err) {
+    console.error('[email-stats]', err.message);
+    res.json({ error: err.message, totals: {}, categories: {} });
+  }
+});
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', siteId: CONFIG.siteId, source: CONFIG.sourceName, sseClients: sseClients.size, eventsReceived: events.length, tokenCached: !!tokenCache.token });
 });
