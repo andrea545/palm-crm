@@ -96,19 +96,56 @@ app.get('/api/mb-debug', async (req, res) => {
   try {
     const mbToken = await getMBToken();
     const today = new Date().toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
-    const [salesRes, classesRes, clientsRes] = await Promise.all([
-      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${thirtyDaysAgo}T00:00:00&EndSaleDateTime=${today}T23:59:59&Limit=5`, { headers: mbHeaders(mbToken) }, 8000),
-      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${thirtyDaysAgo}T00:00:00&EndDateTime=${today}T23:59:59&Limit=5`, { headers: mbHeaders(mbToken) }, 8000),
-      fetchWithTimeout(`${MB_BASE}/client/clients?Limit=5`, { headers: mbHeaders(mbToken) }, 8000),
+    const ninetyDaysAgo = new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0];
+    const [salesRes, classesRes, clientsRes, servicesRes] = await Promise.all([
+      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${ninetyDaysAgo}T00:00:00&EndSaleDateTime=${today}T23:59:59&Limit=5`, { headers: mbHeaders(mbToken) }, 12000),
+      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${ninetyDaysAgo}T00:00:00&EndDateTime=${today}T23:59:59&Limit=5`, { headers: mbHeaders(mbToken) }, 12000),
+      fetchWithTimeout(`${MB_BASE}/client/clients?Limit=5`, { headers: mbHeaders(mbToken) }, 12000),
+      fetchWithTimeout(`${MB_BASE}/client/clientservices?Limit=5`, { headers: mbHeaders(mbToken) }, 12000),
     ]);
     const sales = await salesRes.json();
     const classes = await classesRes.json();
     const clients = await clientsRes.json();
+    const services = await servicesRes.json();
+
+    // Show FULL first sale with all keys — critical for diagnosing revenue calculation
+    const firstSale = (sales.Sales || [])[0];
+    const firstClass = (classes.Classes || [])[0];
+    const firstClient = (clients.Clients || [])[0];
+    const firstService = (services.ClientServices || [])[0];
+
     res.json({
-      salesCount: sales.Sales?.length || 0, salesSample: sales.Sales?.slice(0,2) || sales,
-      classesCount: classes.Classes?.length || 0, classesSample: classes.Classes?.slice(0,2) || classes,
-      clientsCount: clients.Clients?.length || 0, clientsSample: clients.Clients?.slice(0,2)?.map(c => ({ FirstName: c.FirstName, Active: c.Active, CreationDate: c.CreationDate })) || clients,
+      // SALES — full first object + keys for verification
+      salesCount: sales.Sales?.length || 0,
+      salesTopLevelKeys: firstSale ? Object.keys(firstSale) : [],
+      saleItemKeys: firstSale?.Items?.[0] ? Object.keys(firstSale.Items[0]) : (firstSale?.items?.[0] ? Object.keys(firstSale.items[0]) : []),
+      salePaymentKeys: firstSale?.Payments?.[0] ? Object.keys(firstSale.Payments[0]) : (firstSale?.payments?.[0] ? Object.keys(firstSale.payments[0]) : []),
+      firstSaleFull: firstSale || sales,
+
+      // CLASSES — full first object
+      classesCount: classes.Classes?.length || 0,
+      classTopLevelKeys: firstClass ? Object.keys(firstClass) : [],
+      firstClassFull: firstClass || classes,
+
+      // CLIENTS — full first object (redact email)
+      clientsCount: clients.Clients?.length || 0,
+      clientTopLevelKeys: firstClient ? Object.keys(firstClient) : [],
+      firstClientSample: firstClient ? {
+        ...firstClient,
+        Email: firstClient.Email ? '***@***' : null,
+        LastName: firstClient.LastName ? firstClient.LastName[0] + '***' : null,
+      } : clients,
+
+      // CLIENT SERVICES — full first object
+      servicesCount: services.ClientServices?.length || 0,
+      serviceTopLevelKeys: firstService ? Object.keys(firstService) : [],
+      firstServiceFull: firstService || services,
+
+      // Error info
+      salesError: sales.Error || sales.errors || null,
+      classesError: classes.Error || classes.errors || null,
+      clientsError: clients.Error || clients.errors || null,
+      servicesError: services.Error || services.errors || null,
     });
   } catch (err) {
     res.json({ error: err.message });
@@ -592,20 +629,27 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
 // ─── Analytics helper: fetch all clients with pagination ────────────────────
 async function fetchAllMBClients(mbToken) {
   let all = [];
+  const startTime = Date.now();
   for (let offset = 0; offset < 5000; offset += 200) {
     const res = await fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200&Offset=${offset}`, {
       headers: mbHeaders(mbToken)
-    }, 12000);
+    }, 15000);
     const data = await res.json();
+    if (data.Error || data.errors) {
+      console.log(`[clients] Pagination error at offset ${offset}:`, JSON.stringify(data.Error || data.errors).substring(0, 200));
+      break;
+    }
     const batch = data.Clients || [];
     all = all.concat(batch);
     if (batch.length < 200) break;
   }
+  console.log(`[clients] Fetched ${all.length} clients in ${Date.now() - startTime}ms`);
   return all;
 }
 
 // ─── Analytics API endpoints ──────────────────────────────────────────────────
 app.get('/api/analytics/overview', requireAuth, async (req, res) => {
+  const reqStart = Date.now();
   try {
     const now = new Date();
     const range = req.query.range || '1d';
@@ -625,34 +669,101 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     const prevEndISO = period.prevEnd.toISOString();
 
     // Fetch all data: current period + comparison period
-    const [allClients, currClassesRes, currSalesRes, prevClassesRes, prevSalesRes, membershipRes] = await Promise.all([
-      fetchAllMBClients(mbToken),
-      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${startISO}&EndDateTime=${endISO}&Limit=200`, {
-        headers: mbHeaders(mbToken)
-      }, 12000),
-      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${startISO}&EndSaleDateTime=${endISO}`, {
-        headers: mbHeaders(mbToken)
-      }, 12000),
-      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${prevStartISO}&EndDateTime=${prevEndISO}&Limit=200`, {
-        headers: mbHeaders(mbToken)
-      }, 12000),
-      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${prevStartISO}&EndSaleDateTime=${prevEndISO}`, {
-        headers: mbHeaders(mbToken)
-      }, 12000),
-      fetchWithTimeout(`${MB_BASE}/client/activeclientmemberships?Limit=200`, {
-        headers: mbHeaders(mbToken)
-      }, 12000),
+    // Use individual try/catch so one failing endpoint doesn't break everything
+    const safeFetch = async (url, label) => {
+      try {
+        const r = await fetchWithTimeout(url, { headers: mbHeaders(mbToken) }, 15000);
+        const d = await r.json();
+        if (d.Error || d.errors) console.log(`[analytics] ${label} error:`, JSON.stringify(d.Error || d.errors).substring(0, 200));
+        return d;
+      } catch (e) {
+        console.log(`[analytics] ${label} failed: ${e.message}`);
+        return {};
+      }
+    };
+
+    const [allClients, currClassesData, currSalesData, prevClassesData, prevSalesData, membershipData] = await Promise.all([
+      fetchAllMBClients(mbToken).catch(e => { console.log('[analytics] clients failed:', e.message); return []; }),
+      safeFetch(`${MB_BASE}/class/classes?StartDateTime=${startISO}&EndDateTime=${endISO}&Limit=200`, 'currClasses'),
+      safeFetch(`${MB_BASE}/sale/sales?StartSaleDateTime=${startISO}&EndSaleDateTime=${endISO}`, 'currSales'),
+      safeFetch(`${MB_BASE}/class/classes?StartDateTime=${prevStartISO}&EndDateTime=${prevEndISO}&Limit=200`, 'prevClasses'),
+      safeFetch(`${MB_BASE}/sale/sales?StartSaleDateTime=${prevStartISO}&EndSaleDateTime=${prevEndISO}`, 'prevSales'),
+      safeFetch(`${MB_BASE}/client/clientservices?Limit=200`, 'memberships'),
     ]);
 
-    const currClasses = (await currClassesRes.json()).Classes || [];
-    const currSales = (await currSalesRes.json()).Sales || [];
-    const prevClasses = (await prevClassesRes.json()).Classes || [];
-    const prevSales = (await prevSalesRes.json()).Sales || [];
-    const memberships = (await membershipRes.json()).ActiveClientMemberships || [];
+    const currClasses = currClassesData.Classes || [];
+    const currSales = currSalesData.Sales || [];
+    const prevClasses = prevClassesData.Classes || [];
+    const prevSales = prevSalesData.Sales || [];
+    // ClientServices can serve as membership proxy — active services with recurring payments
+    const memberships = membershipData.ClientServices || [];
+
+    // ─── Helper: calculate total from a MindBody Sale object ──────────────────
+    // MindBody Public API v6 (PascalCase) vs Webhooks API (camelCase) return different field names.
+    // Public API: Payments[].Amount, Items[].Total/Price, + possible top-level fields
+    // Webhooks: payments[].paymentAmountPaid, items[].amountPaid, totalAmountPaid
+    // We handle ALL variants defensively.
+    const getSaleTotal = (sale) => {
+      // 1. Top-level total fields (most direct if they exist)
+      if (typeof sale.TotalAmountPaid === 'number' && sale.TotalAmountPaid > 0) return sale.TotalAmountPaid;
+      if (typeof sale.totalAmountPaid === 'number' && sale.totalAmountPaid > 0) return sale.totalAmountPaid;
+
+      // 2. Payments array — Public API PascalCase
+      if (sale.Payments && sale.Payments.length > 0) {
+        const total = sale.Payments.reduce((sum, p) => {
+          return sum + (p.Amount || p.AmountPaid || p.PaymentAmountPaid || p.amount || p.amountPaid || p.paymentAmountPaid || 0);
+        }, 0);
+        if (total > 0) return total;
+      }
+      // Payments — Webhooks camelCase
+      if (sale.payments && sale.payments.length > 0) {
+        const total = sale.payments.reduce((sum, p) => {
+          return sum + (p.paymentAmountPaid || p.amountPaid || p.amount || p.Amount || 0);
+        }, 0);
+        if (total > 0) return total;
+      }
+
+      // 3. Items array — Public API PascalCase
+      if (sale.Items && sale.Items.length > 0) {
+        const total = sale.Items.reduce((sum, item) => {
+          return sum + (item.Total || item.AmountPaid || item.Price || item.total || item.amountPaid || item.price || 0);
+        }, 0);
+        if (total > 0) return total;
+      }
+      // Items — Webhooks camelCase
+      if (sale.items && sale.items.length > 0) {
+        const total = sale.items.reduce((sum, item) => {
+          return sum + (item.amountPaid || item.total || item.price || item.Total || item.Price || 0);
+        }, 0);
+        if (total > 0) return total;
+      }
+
+      // 4. Legacy/fallback top-level fields
+      return sale.TotalAmount || sale.Amount || sale.Total || sale.NetTotal ||
+             sale.totalAmount || sale.amount || sale.total || sale.netTotal || 0;
+    };
+
+    // Helper: get sale date string — handles both Public API and Webhook field names
+    const getSaleDate = (sale) => {
+      const dt = sale.SaleDateTime || sale.SaleDate || sale.SaleTime ||
+                 sale.saleDateTime || sale.saleDate || sale.CreatedDateTime;
+      if (dt) return typeof dt === 'string' ? dt.split('T')[0] : new Date(dt).toISOString().split('T')[0];
+      return new Date().toISOString().split('T')[0];
+    };
+
+    // Helper: get sale item descriptions — handles both APIs
+    const getSaleDescriptions = (sale) => {
+      const items = sale.Items || sale.items;
+      if (items && items.length > 0) {
+        return items.map(item => item.Description || item.Name || item.name || item.description || 'Other');
+      }
+      if (sale.Description || sale.description) return [sale.Description || sale.description];
+      return ['Other'];
+    };
 
     // ─── REVENUE & SALES ──────────────────────────────────────────────────────
-    const totalRevenue = currSales.reduce((a, s) => a + (s.TotalAmount || s.Amount || 0), 0);
-    const prevRevenue = prevSales.reduce((a, s) => a + (s.TotalAmount || s.Amount || 0), 0);
+    const totalRevenue = currSales.reduce((a, s) => a + getSaleTotal(s), 0);
+    const prevRevenue = prevSales.reduce((a, s) => a + getSaleTotal(s), 0);
     const revenueGrowth = prevRevenue !== 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100) : (totalRevenue > 0 ? 100 : 0);
 
     const totalSalesCount = currSales.length;
@@ -663,13 +774,28 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     const prevAvgSaleValue = prevSalesCount > 0 ? prevRevenue / prevSalesCount : 0;
     const avgSaleGrowth = prevAvgSaleValue !== 0 ? Math.round(((avgSaleValue - prevAvgSaleValue) / prevAvgSaleValue) * 100) : (avgSaleValue > 0 ? 100 : 0);
 
-    // Group sales by service type
+    // Group sales by service type (using Items array descriptions)
     const revenueBySvcMap = {};
     currSales.forEach(s => {
-      const svc = s.Description || 'Other';
-      if (!revenueBySvcMap[svc]) revenueBySvcMap[svc] = { name: svc, revenue: 0, count: 0 };
-      revenueBySvcMap[svc].revenue += (s.TotalAmount || s.Amount || 0);
-      revenueBySvcMap[svc].count += 1;
+      const saleTotal = getSaleTotal(s);
+      const descriptions = getSaleDescriptions(s);
+      const items = s.Items || s.items;
+      // If sale has items array, attribute revenue per item; otherwise use first description
+      if (items && items.length > 0) {
+        items.forEach(item => {
+          const svc = item.Description || item.Name || item.name || item.description || 'Other';
+          const itemTotal = item.Total || item.AmountPaid || item.Price ||
+                           item.total || item.amountPaid || item.price || 0;
+          if (!revenueBySvcMap[svc]) revenueBySvcMap[svc] = { name: svc, revenue: 0, count: 0 };
+          revenueBySvcMap[svc].revenue += itemTotal;
+          revenueBySvcMap[svc].count += 1;
+        });
+      } else {
+        const svc = descriptions[0];
+        if (!revenueBySvcMap[svc]) revenueBySvcMap[svc] = { name: svc, revenue: 0, count: 0 };
+        revenueBySvcMap[svc].revenue += saleTotal;
+        revenueBySvcMap[svc].count += 1;
+      }
     });
     const revenueBySvc = Object.values(revenueBySvcMap)
       .map(s => ({ ...s, pctOfTotal: totalRevenue > 0 ? Math.round((s.revenue / totalRevenue) * 100) : 0 }))
@@ -679,9 +805,9 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     // Daily revenue trend
     const dailyRevenueMap = {};
     currSales.forEach(s => {
-      const day = s.SaleDate ? s.SaleDate.split('T')[0] : new Date().toISOString().split('T')[0];
+      const day = getSaleDate(s);
       if (!dailyRevenueMap[day]) dailyRevenueMap[day] = { date: day, revenue: 0, sales: 0 };
-      dailyRevenueMap[day].revenue += (s.TotalAmount || s.Amount || 0);
+      dailyRevenueMap[day].revenue += getSaleTotal(s);
       dailyRevenueMap[day].sales += 1;
     });
     const dailyRevenue = Object.values(dailyRevenueMap).sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -785,6 +911,36 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     const activeClients = allClients.filter(c => c.Active !== false);
     const totalClients = allClients.length;
 
+    // Build a "last seen" map from class booking data (uses classes already fetched)
+    // This is more reliable than LastVisit which may not exist on the clients endpoint
+    const clientLastSeen = {};
+    const clientVisitCount = {};
+    // Use ALL classes (current + previous period) for broader visibility
+    [...currClasses, ...prevClasses].forEach(cls => {
+      if (cls.Clients) {
+        cls.Clients.forEach(client => {
+          const cId = client.Id || client.ClientId;
+          if (!cId) return;
+          const classDate = cls.StartDateTime ? new Date(cls.StartDateTime) : null;
+          if (classDate && (!clientLastSeen[cId] || classDate > clientLastSeen[cId])) {
+            clientLastSeen[cId] = classDate;
+          }
+          clientVisitCount[cId] = (clientVisitCount[cId] || 0) + 1;
+        });
+      }
+    });
+
+    // Helper: get best estimate of last activity for a client
+    const getLastActivity = (c) => {
+      const cId = c.Id || c.UniqueId;
+      // Priority: 1) class booking data, 2) LastVisitDateTime (if MB returns it), 3) LastModifiedDateTime, 4) CreationDate
+      if (cId && clientLastSeen[cId]) return clientLastSeen[cId];
+      if (c.LastVisitDateTime) return new Date(c.LastVisitDateTime);
+      if (c.LastModifiedDateTime) return new Date(c.LastModifiedDateTime);
+      if (c.CreationDate) return new Date(c.CreationDate);
+      return new Date(0);
+    };
+
     // New clients this period
     const newClients = allClients.filter(c => {
       const cd = c.CreationDate ? new Date(c.CreationDate) : null;
@@ -817,52 +973,56 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     const prevRetentionRate = totalClients > 0 ? Math.round((prevActiveClients / totalClients) * 100) : 0;
     const retentionGrowth = retentionRate - prevRetentionRate;
 
-    // At-risk clients (no visit in 14+ days)
+    // At-risk clients (no activity in 14+ days)
     const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000);
     const atRiskClients = allClients
       .filter(c => {
         if (c.Active === false) return false;
-        const lastVisit = c.LastVisit ? new Date(c.LastVisit) : (c.LastModifiedDateTime ? new Date(c.LastModifiedDateTime) : new Date(0));
-        return lastVisit < twoWeeksAgo;
+        return getLastActivity(c) < twoWeeksAgo;
       })
-      .sort((a, b) => {
-        const aLast = a.LastVisit ? new Date(a.LastVisit) : (a.LastModifiedDateTime ? new Date(a.LastModifiedDateTime) : new Date(0));
-        const bLast = b.LastVisit ? new Date(b.LastVisit) : (b.LastModifiedDateTime ? new Date(b.LastModifiedDateTime) : new Date(0));
-        return aLast - bLast;
-      })
+      .sort((a, b) => getLastActivity(a) - getLastActivity(b))
       .slice(0, 10)
-      .map(c => ({
-        name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
-        email: c.Email,
-        lastVisit: c.LastVisit || c.LastModifiedDateTime || 'Unknown',
-        totalVisits: c.VisitCount || 0,
-      }));
+      .map(c => {
+        const cId = c.Id || c.UniqueId;
+        return {
+          name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
+          email: c.Email,
+          lastVisit: getLastActivity(c).toISOString(),
+          totalVisits: (cId && clientVisitCount[cId]) || 0,
+        };
+      });
 
     // Recent clients (newest)
     const recentClients = allClients
       .filter(c => c.CreationDate)
       .sort((a, b) => new Date(b.CreationDate) - new Date(a.CreationDate))
       .slice(0, 10)
-      .map(c => ({
-        name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
-        email: c.Email,
-        joinDate: c.CreationDate,
-        visits: c.VisitCount || 0,
-      }));
+      .map(c => {
+        const cId = c.Id || c.UniqueId;
+        return {
+          name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
+          email: c.Email,
+          joinDate: c.CreationDate,
+          visits: (cId && clientVisitCount[cId]) || 0,
+        };
+      });
 
     // ─── MEMBERSHIPS ─────────────────────────────────────────────────────────
-    const activeMemberships = memberships.length;
-    const prevActiveMemberships = memberships.length; // No comparison period for memberships in this API
-    const membershipGrowth = 0; // Would require historical data
+    // ClientServices returns active services — filter for memberships/autopay
+    const activeMemberships = memberships.filter(m => m.Active === true || m.Remaining > 0).length;
+    const prevActiveMemberships = activeMemberships; // Snapshot — no historical comparison available
+    const membershipGrowth = 0;
 
     const membershipTypesMap = {};
     memberships.forEach(m => {
-      const type = m.MembershipType?.Name || 'Other';
+      const type = m.Name || m.Program?.Name || 'Other';
       membershipTypesMap[type] = (membershipTypesMap[type] || 0) + 1;
     });
     const membershipTypes = Object.entries(membershipTypesMap)
       .map(([name, count]) => ({ name, count, pctOfTotal: activeMemberships > 0 ? Math.round((count / activeMemberships) * 100) : 0 }))
       .sort((a, b) => b.count - a.count);
+
+    console.log(`[studio-analytics] Completed in ${Date.now() - reqStart}ms — ${totalClients} clients, ${currClasses.length} classes, ${currSales.length} sales, rev €${Math.round(totalRevenue)}`);
 
     res.json({
       live: true,
