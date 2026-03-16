@@ -489,6 +489,11 @@ async function handleAutomations(event) {
 // ─── Webhook receiver ─────────────────────────────────────────────────────────
 const events = [];
 const sseClients = new Set();
+// HEAD handler — MindBody sends HEAD to validate the webhook URL during subscription creation
+app.head('/webhooks/mindbody', (req, res) => {
+  console.log('[webhook] HEAD validation request received');
+  res.status(200).end();
+});
 app.post('/webhooks/mindbody', (req, res) => {
   const event = {
     id: crypto.randomUUID(),
@@ -519,6 +524,98 @@ function broadcast(event) {
 app.get('/api/events/log', requireAuth, (req, res) => {
   res.json({ events: events.slice(0, 50), total: events.length });
 });
+
+// ─── MindBody Webhook Subscription Management ─────────────────────────────────
+const MB_WEBHOOKS_BASE = 'https://mb-api.mindbodyonline.com/push/api/v1';
+
+// List current webhook subscriptions
+app.get('/api/webhooks/subscriptions', requireAuth, async (req, res) => {
+  try {
+    const r = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions`, {
+      headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+    }, 10000);
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
+// Create + activate webhook subscriptions for all email automation events
+app.post('/api/webhooks/setup', requireAuth, async (req, res) => {
+  const webhookUrl = req.body.webhookUrl;
+  if (!webhookUrl) return res.status(400).json({ error: 'webhookUrl is required' });
+
+  // Events we need for our email automations:
+  // client.created → Welcome email
+  // client.updated → Track changes
+  // classRosterBooking.created → After class check-in (first visit, intro complete, last credit)
+  // sale.created → Membership upsell trigger (after 2nd 10-pack)
+  const eventSets = [
+    { events: ['client.created', 'client.updated'], ref: 'psc-client-events' },
+    { events: ['classRosterBooking.created'], ref: 'psc-class-events' },
+    { events: ['sale.created'], ref: 'psc-sale-events' },
+  ];
+
+  const results = [];
+
+  for (const set of eventSets) {
+    try {
+      // Step 1: Create subscription
+      console.log(`[webhooks] Creating subscription for ${set.events.join(', ')}...`);
+      const createRes = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions`, {
+        method: 'POST',
+        headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhookUrl: webhookUrl,
+          eventIds: set.events,
+          eventSchemaVersion: 1,
+          referenceId: set.ref,
+        }),
+      }, 15000);
+      const createData = await createRes.json();
+      console.log(`[webhooks] Create response:`, JSON.stringify(createData).substring(0, 300));
+
+      if (createData.error || createData.Error) {
+        results.push({ events: set.events, status: 'create_failed', error: createData.error || createData.Error });
+        continue;
+      }
+
+      const subId = createData.subscriptionId || createData.id || createData.Id;
+      if (!subId) {
+        results.push({ events: set.events, status: 'no_subscription_id', response: createData });
+        continue;
+      }
+
+      // Step 2: Activate the subscription
+      console.log(`[webhooks] Activating subscription ${subId}...`);
+      const activateRes = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${subId}/activate`, {
+        method: 'PATCH',
+        headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Active' }),
+      }, 10000);
+      const activateData = await activateRes.json();
+      console.log(`[webhooks] Activate response:`, JSON.stringify(activateData).substring(0, 300));
+
+      results.push({
+        events: set.events,
+        subscriptionId: subId,
+        status: activateData.status || 'activated',
+        response: activateData,
+      });
+    } catch (err) {
+      console.error(`[webhooks] Error setting up ${set.events.join(', ')}:`, err.message);
+      results.push({ events: set.events, status: 'error', error: err.message });
+    }
+  }
+
+  res.json({
+    message: 'Webhook setup complete',
+    webhookUrl,
+    subscriptions: results,
+  });
+});
+
 // ─── Health ───────────────────────────────────────────────────────────────────
 // ─── SendGrid Email Stats ─────────────────────────────────────────────────
 app.get('/api/email/stats', requireAuth, async (req, res) => {
