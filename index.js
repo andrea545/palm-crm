@@ -589,120 +589,402 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ─── Analytics helper: fetch all clients with pagination ────────────────────
+async function fetchAllMBClients(mbToken) {
+  let all = [];
+  for (let offset = 0; offset < 5000; offset += 200) {
+    const res = await fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200&Offset=${offset}`, {
+      headers: mbHeaders(mbToken)
+    }, 12000);
+    const data = await res.json();
+    const batch = data.Clients || [];
+    all = all.concat(batch);
+    if (batch.length < 200) break;
+  }
+  return all;
+}
+
 // ─── Analytics API endpoints ──────────────────────────────────────────────────
 app.get('/api/analytics/overview', requireAuth, async (req, res) => {
   try {
-    const mbToken = await getMBToken();
-    const today = new Date().toISOString().split('T')[0];
-    const range = req.query.range || '30d';
     const now = new Date();
-    const rangeDays = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : range === 'ytd' ? Math.floor((now - new Date(now.getFullYear(),0,1)) / (24*60*60*1000)) : 30;
-    const startDate = new Date(Date.now() - rangeDays*24*60*60*1000).toISOString().split('T')[0];
-    const thirtyDaysAgo = startDate;
-    const sixtyDaysAgo = new Date(Date.now() - rangeDays*2*24*60*60*1000).toISOString().split('T')[0];
-    const fourteenDaysAgo = new Date(Date.now() - 14*24*60*60*1000).toISOString().split('T')[0];
+    const range = req.query.range || '1d';
 
-    const [clientsRes, classesRes, salesRes] = await Promise.all([
-      fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, {
+    // Validate range parameter
+    if (!['1d', '1w', '1m', '3m', '1y'].includes(range)) {
+      return res.status(400).json({ error: 'Invalid range. Use: 1d, 1w, 1m, 3m, 1y', live: false });
+    }
+
+    const period = getCalendarPeriod(range, now);
+    const mbToken = await getMBToken();
+
+    // Format dates for MB API (ISO format)
+    const startISO = period.start.toISOString();
+    const endISO = period.end.toISOString();
+    const prevStartISO = period.prevStart.toISOString();
+    const prevEndISO = period.prevEnd.toISOString();
+
+    // Fetch all data: current period + comparison period
+    const [allClients, currClassesRes, currSalesRes, prevClassesRes, prevSalesRes, membershipRes] = await Promise.all([
+      fetchAllMBClients(mbToken),
+      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${startISO}&EndDateTime=${endISO}&Limit=200`, {
         headers: mbHeaders(mbToken)
-      }, 5000),
-      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${thirtyDaysAgo}T00:00:00&EndDateTime=${today}T23:59:59&Limit=200`, {
+      }, 12000),
+      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${startISO}&EndSaleDateTime=${endISO}`, {
         headers: mbHeaders(mbToken)
-      }, 5000),
-      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${thirtyDaysAgo}T00:00:00&EndSaleDateTime=${today}T23:59:59`, {
+      }, 12000),
+      fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${prevStartISO}&EndDateTime=${prevEndISO}&Limit=200`, {
         headers: mbHeaders(mbToken)
-      }, 5000),
+      }, 12000),
+      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${prevStartISO}&EndSaleDateTime=${prevEndISO}`, {
+        headers: mbHeaders(mbToken)
+      }, 12000),
+      fetchWithTimeout(`${MB_BASE}/client/activeclientmemberships?Limit=200`, {
+        headers: mbHeaders(mbToken)
+      }, 12000),
     ]);
 
-    const clients = (await clientsRes.json()).Clients || [];
-    const classes = (await classesRes.json()).Classes || [];
-    const sales = (await salesRes.json()).Sales || [];
+    const currClasses = (await currClassesRes.json()).Classes || [];
+    const currSales = (await currSalesRes.json()).Sales || [];
+    const prevClasses = (await prevClassesRes.json()).Classes || [];
+    const prevSales = (await prevSalesRes.json()).Sales || [];
+    const memberships = (await membershipRes.json()).ActiveClientMemberships || [];
 
-    // Calculate metrics
-    const activeClients = clients.filter(c => c.Active !== false);
-    const newThisMonth = clients.filter(c => c.CreationDate && new Date(c.CreationDate) > new Date(thirtyDaysAgo));
-    const totalBooked = classes.reduce((a, c) => a + (c.TotalBooked || 0), 0);
-    const totalCapacity = classes.reduce((a, c) => a + (c.MaxCapacity || 10), 0);
+    // ─── REVENUE & SALES ──────────────────────────────────────────────────────
+    const totalRevenue = currSales.reduce((a, s) => a + (s.TotalAmount || s.Amount || 0), 0);
+    const prevRevenue = prevSales.reduce((a, s) => a + (s.TotalAmount || s.Amount || 0), 0);
+    const revenueGrowth = prevRevenue !== 0 ? Math.round(((totalRevenue - prevRevenue) / prevRevenue) * 100) : (totalRevenue > 0 ? 100 : 0);
+
+    const totalSalesCount = currSales.length;
+    const prevSalesCount = prevSales.length;
+    const salesCountGrowth = prevSalesCount !== 0 ? Math.round(((totalSalesCount - prevSalesCount) / prevSalesCount) * 100) : (totalSalesCount > 0 ? 100 : 0);
+
+    const avgSaleValue = totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0;
+    const prevAvgSaleValue = prevSalesCount > 0 ? prevRevenue / prevSalesCount : 0;
+    const avgSaleGrowth = prevAvgSaleValue !== 0 ? Math.round(((avgSaleValue - prevAvgSaleValue) / prevAvgSaleValue) * 100) : (avgSaleValue > 0 ? 100 : 0);
+
+    // Group sales by service type
+    const revenueBySvcMap = {};
+    currSales.forEach(s => {
+      const svc = s.Description || 'Other';
+      if (!revenueBySvcMap[svc]) revenueBySvcMap[svc] = { name: svc, revenue: 0, count: 0 };
+      revenueBySvcMap[svc].revenue += (s.TotalAmount || s.Amount || 0);
+      revenueBySvcMap[svc].count += 1;
+    });
+    const revenueBySvc = Object.values(revenueBySvcMap)
+      .map(s => ({ ...s, pctOfTotal: totalRevenue > 0 ? Math.round((s.revenue / totalRevenue) * 100) : 0 }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
+    // Daily revenue trend
+    const dailyRevenueMap = {};
+    currSales.forEach(s => {
+      const day = s.SaleDate ? s.SaleDate.split('T')[0] : new Date().toISOString().split('T')[0];
+      if (!dailyRevenueMap[day]) dailyRevenueMap[day] = { date: day, revenue: 0, sales: 0 };
+      dailyRevenueMap[day].revenue += (s.TotalAmount || s.Amount || 0);
+      dailyRevenueMap[day].sales += 1;
+    });
+    const dailyRevenue = Object.values(dailyRevenueMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // ─── ATTENDANCE & CLASSES ────────────────────────────────────────────────
+    const totalClasses = currClasses.length;
+    const totalBooked = currClasses.reduce((a, c) => a + (c.TotalBooked || 0), 0);
+    const totalCapacity = currClasses.reduce((a, c) => a + (c.MaxCapacity || 10), 0);
     const avgFillRate = totalCapacity > 0 ? Math.round((totalBooked / totalCapacity) * 100) : 0;
 
-    // Revenue from sales
-    const totalRevenue = sales.reduce((a, s) => a + (s.TotalAmount || s.Amount || 0), 0);
+    const prevTotalBooked = prevClasses.reduce((a, c) => a + (c.TotalBooked || 0), 0);
+    const prevTotalCapacity = prevClasses.reduce((a, c) => a + (c.MaxCapacity || 10), 0);
+    const prevFillRate = prevTotalCapacity > 0 ? Math.round((prevTotalBooked / prevTotalCapacity) * 100) : 0;
+    const fillRateGrowth = avgFillRate - prevFillRate;
 
-    // At-risk clients (no recent activity)
-    const atRisk = clients.filter(c => {
-      if (!c.Active) return false;
-      const lastVisit = c.LastModifiedDateTime || c.CreationDate;
-      if (!lastVisit) return true;
-      return new Date(lastVisit) < new Date(fourteenDaysAgo);
+    const totalVisits = totalBooked;
+    const prevVisits = prevTotalBooked;
+    const visitsGrowth = prevVisits !== 0 ? Math.round(((totalVisits - prevVisits) / prevVisits) * 100) : (totalVisits > 0 ? 100 : 0);
+
+    // Top classes by booking count
+    const classesByNameMap = {};
+    currClasses.forEach(c => {
+      const name = c.ClassDescription?.Name || 'Unknown Class';
+      if (!classesByNameMap[name]) {
+        classesByNameMap[name] = { name, count: 0, avgFill: 0, totalBooked: 0, avgBooked: 0 };
+      }
+      classesByNameMap[name].count += 1;
+      classesByNameMap[name].totalBooked += (c.TotalBooked || 0);
     });
+    const classesByName = Object.values(classesByNameMap)
+      .map(c => ({ ...c, avgBooked: c.count > 0 ? Math.round(c.totalBooked / c.count) : 0, avgFill: Math.round((c.totalBooked / (c.count * 10)) * 100) }))
+      .sort((a, b) => b.totalBooked - a.totalBooked)
+      .slice(0, 10);
+
+    // Instructor stats
+    const instructorMap = {};
+    currClasses.forEach(c => {
+      const name = c.Staff?.DisplayName || 'Unassigned';
+      if (!instructorMap[name]) {
+        instructorMap[name] = { name, classes: 0, totalBooked: 0, avgFill: 0 };
+      }
+      instructorMap[name].classes += 1;
+      instructorMap[name].totalBooked += (c.TotalBooked || 0);
+    });
+    const instructorStats = Object.values(instructorMap)
+      .map(i => ({ ...i, avgFill: i.classes > 0 ? Math.round((i.totalBooked / (i.classes * 10)) * 100) : 0 }))
+      .sort((a, b) => b.totalBooked - a.totalBooked)
+      .slice(0, 10);
+
+    // Hourly attendance (0-23)
+    const hourlyAttendance = new Array(24).fill(0);
+    currClasses.forEach(c => {
+      if (c.StartDateTime) {
+        const hour = new Date(c.StartDateTime).getHours();
+        hourlyAttendance[hour] = (hourlyAttendance[hour] || 0) + (c.TotalBooked || 0);
+      }
+    });
+
+    // Daily attendance trend
+    const dailyAttendanceMap = {};
+    currClasses.forEach(c => {
+      if (c.StartDateTime) {
+        const day = c.StartDateTime.split('T')[0];
+        if (!dailyAttendanceMap[day]) dailyAttendanceMap[day] = { date: day, visits: 0, classes: 0 };
+        dailyAttendanceMap[day].visits += (c.TotalBooked || 0);
+        dailyAttendanceMap[day].classes += 1;
+      }
+    });
+    const dailyAttendance = Object.values(dailyAttendanceMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Busiest day and hour
+    let busiestDay = 'N/A', busiestHour = 'N/A';
+    if (dailyAttendance.length > 0) {
+      const bd = dailyAttendance.reduce((a, b) => a.visits > b.visits ? a : b);
+      busiestDay = bd.date;
+    }
+    const maxHour = hourlyAttendance.reduce((max, v, i) => v > hourlyAttendance[max] ? i : max, 0);
+    busiestHour = `${maxHour}:00`;
+
+    // Hourly heatmap (day of week x hour)
+    const heatmapData = {};
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    dayNames.forEach(d => { heatmapData[d] = {}; });
+    currClasses.forEach(c => {
+      if (c.StartDateTime) {
+        const dt = new Date(c.StartDateTime);
+        const dayName = dayNames[dt.getDay()];
+        const hour = dt.getHours();
+        if (!heatmapData[dayName][hour]) heatmapData[dayName][hour] = 0;
+        heatmapData[dayName][hour] += (c.TotalBooked || 0);
+      }
+    });
+    const hourlyHeatmap = Object.fromEntries(
+      Object.entries(heatmapData).map(([day, hours]) => [
+        day,
+        Object.fromEntries(Object.entries(hours).map(([h, v]) => [parseInt(h), v]))
+      ])
+    );
+
+    // ─── CLIENT HEALTH ───────────────────────────────────────────────────────
+    const activeClients = allClients.filter(c => c.Active !== false);
+    const totalClients = allClients.length;
+
+    // New clients this period
+    const newClients = allClients.filter(c => {
+      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
+      return cd && cd >= period.start && cd <= period.end;
+    }).length;
+
+    const prevNewClients = allClients.filter(c => {
+      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
+      return cd && cd >= period.prevStart && cd <= period.prevEnd;
+    }).length;
+    const newClientsGrowth = prevNewClients !== 0 ? Math.round(((newClients - prevNewClients) / prevNewClients) * 100) : (newClients > 0 ? 100 : 0);
+
+    // First visit percentage
+    const firstVisitClients = allClients.filter(c => {
+      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
+      return cd && cd >= period.start && cd <= period.end;
+    }).length;
+    const firstVisitPct = totalClients > 0 ? Math.round((firstVisitClients / totalClients) * 100) : 0;
+
+    const prevFirstVisitClients = allClients.filter(c => {
+      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
+      return cd && cd >= period.prevStart && cd <= period.prevEnd;
+    }).length;
+    const prevFirstVisitPct = totalClients > 0 ? Math.round((prevFirstVisitClients / totalClients) * 100) : 0;
+    const firstVisitGrowth = firstVisitPct - prevFirstVisitPct;
+
+    // Retention rate
+    const retentionRate = totalClients > 0 ? Math.round((activeClients.length / totalClients) * 100) : 0;
+    const prevActiveClients = allClients.filter(c => c.Active !== false).length;
+    const prevRetentionRate = totalClients > 0 ? Math.round((prevActiveClients / totalClients) * 100) : 0;
+    const retentionGrowth = retentionRate - prevRetentionRate;
+
+    // At-risk clients (no visit in 14+ days)
+    const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000);
+    const atRiskClients = allClients
+      .filter(c => {
+        if (c.Active === false) return false;
+        const lastVisit = c.LastVisit ? new Date(c.LastVisit) : (c.LastModifiedDateTime ? new Date(c.LastModifiedDateTime) : new Date(0));
+        return lastVisit < twoWeeksAgo;
+      })
+      .sort((a, b) => {
+        const aLast = a.LastVisit ? new Date(a.LastVisit) : (a.LastModifiedDateTime ? new Date(a.LastModifiedDateTime) : new Date(0));
+        const bLast = b.LastVisit ? new Date(b.LastVisit) : (b.LastModifiedDateTime ? new Date(b.LastModifiedDateTime) : new Date(0));
+        return aLast - bLast;
+      })
+      .slice(0, 10)
+      .map(c => ({
+        name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
+        email: c.Email,
+        lastVisit: c.LastVisit || c.LastModifiedDateTime || 'Unknown',
+        totalVisits: c.VisitCount || 0,
+      }));
+
+    // Recent clients (newest)
+    const recentClients = allClients
+      .filter(c => c.CreationDate)
+      .sort((a, b) => new Date(b.CreationDate) - new Date(a.CreationDate))
+      .slice(0, 10)
+      .map(c => ({
+        name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
+        email: c.Email,
+        joinDate: c.CreationDate,
+        visits: c.VisitCount || 0,
+      }));
+
+    // ─── MEMBERSHIPS ─────────────────────────────────────────────────────────
+    const activeMemberships = memberships.length;
+    const prevActiveMemberships = memberships.length; // No comparison period for memberships in this API
+    const membershipGrowth = 0; // Would require historical data
+
+    const membershipTypesMap = {};
+    memberships.forEach(m => {
+      const type = m.MembershipType?.Name || 'Other';
+      membershipTypesMap[type] = (membershipTypesMap[type] || 0) + 1;
+    });
+    const membershipTypes = Object.entries(membershipTypesMap)
+      .map(([name, count]) => ({ name, count, pctOfTotal: activeMemberships > 0 ? Math.round((count / activeMemberships) * 100) : 0 }))
+      .sort((a, b) => b.count - a.count);
 
     res.json({
       live: true,
-      range, rangeDays,
-      totalClients: clients.length,
-      activeClients: activeClients.length,
-      newThisMonth: newThisMonth.length,
-      classesThisMonth: classes.length,
-      totalBooked,
-      avgFillRate,
+      range,
+      periodLabel: period.label,
+      compLabel: period.compLabel,
+
+      // Revenue & Sales
       totalRevenue: Math.round(totalRevenue * 100) / 100,
-      atRiskCount: atRisk.length,
-      atRiskClients: atRisk.slice(0, 10).map(c => ({
-        name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
-        email: c.Email,
-        lastSeen: c.LastModifiedDateTime || c.CreationDate || 'Unknown',
-        visits: c.VisitCount || 0,
-      })),
-      classes: classes.map(c => ({
-        name: c.ClassDescription?.Name || 'Class',
-        date: c.StartDateTime,
-        booked: c.TotalBooked || 0,
-        capacity: c.MaxCapacity || 10,
-        instructor: c.Staff?.DisplayName || 'Staff',
-      })),
-      sales: sales.map(s => ({
-        date: s.SaleDate || s.PurchaseDate,
-        amount: s.TotalAmount || s.Amount || 0,
-        description: s.Description || 'Sale',
-        client: s.ClientId,
-      })),
+      prevRevenue: Math.round(prevRevenue * 100) / 100,
+      revenueGrowth,
+      avgSaleValue: Math.round(avgSaleValue * 100) / 100,
+      prevAvgSaleValue: Math.round(prevAvgSaleValue * 100) / 100,
+      avgSaleGrowth,
+      totalSalesCount,
+      prevSalesCount,
+      salesCountGrowth,
+      revenueBySvc,
+      dailyRevenue,
+
+      // Attendance & Classes
+      totalClasses,
+      totalBooked,
+      totalCapacity,
+      avgFillRate,
+      prevFillRate,
+      fillRateGrowth,
+      totalVisits,
+      prevVisits,
+      visitsGrowth,
+      classesByName,
+      instructorStats,
+      hourlyAttendance,
+      dailyAttendance,
+      busiestDay,
+      busiestHour,
+      hourlyHeatmap,
+
+      // Client Health
+      totalClients,
+      activeClients: activeClients.length,
+      newClients,
+      prevNewClients,
+      newClientsGrowth,
+      firstVisitPct,
+      prevFirstVisitPct,
+      firstVisitGrowth,
+      retentionRate,
+      prevRetentionRate,
+      retentionGrowth,
+      atRiskClients,
+      recentClients,
+
+      // Memberships
+      activeMemberships,
+      prevActiveMemberships,
+      membershipGrowth,
+      membershipTypes,
     });
   } catch (err) {
-    console.error('[analytics]', err.message);
+    console.error('[studio-analytics]', err.message);
     res.status(502).json({ error: err.message, live: false });
   }
 });
 
 app.get('/api/analytics/retention', requireAuth, async (req, res) => {
   try {
+    const now = new Date();
+    const range = req.query.range || '1m';
+
+    // Validate range parameter
+    if (!['1d', '1w', '1m', '3m', '1y'].includes(range)) {
+      return res.status(400).json({ error: 'Invalid range. Use: 1d, 1w, 1m, 3m, 1y', live: false });
+    }
+
+    const period = getCalendarPeriod(range, now);
     const mbToken = await getMBToken();
-    const today = new Date().toISOString().split('T')[0];
-    const ninetyDaysAgo = new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0];
 
-    const clientsRes = await fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, {
-      headers: mbHeaders(mbToken)
-    }, 5000);
-    const clients = (await clientsRes.json()).Clients || [];
-    const active = clients.filter(c => c.Active !== false);
-    const total = clients.length;
-    const retentionRate = total > 0 ? Math.round((active.length / total) * 100) : 0;
+    // Fetch all clients
+    const allClients = await fetchAllMBClients(mbToken);
 
-    // Churn = clients who became inactive recently
-    const churned = clients.filter(c => {
+    // Calculate retention metrics
+    const activeClients = allClients.filter(c => c.Active !== false);
+    const totalClients = allClients.length;
+    const retentionRate = totalClients > 0 ? Math.round((activeClients.length / totalClients) * 100) : 0;
+
+    // Churned clients (became inactive during this period)
+    const churned = allClients.filter(c => {
       if (c.Active !== false) return false;
-      const last = c.LastModifiedDateTime;
-      return last && new Date(last) > new Date(ninetyDaysAgo);
+      const lastMod = c.LastModifiedDateTime ? new Date(c.LastModifiedDateTime) : null;
+      return lastMod && lastMod >= period.start && lastMod <= period.end;
     });
+
+    // New clients in period
+    const newClientsInPeriod = allClients.filter(c => {
+      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
+      return cd && cd >= period.start && cd <= period.end;
+    }).length;
+
+    // At-risk clients (no visit in 14+ days)
+    const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000);
+    const atRiskCount = allClients.filter(c => {
+      if (c.Active === false) return false;
+      const lastVisit = c.LastVisit ? new Date(c.LastVisit) : (c.LastModifiedDateTime ? new Date(c.LastModifiedDateTime) : new Date(0));
+      return lastVisit < twoWeeksAgo;
+    }).length;
 
     res.json({
       live: true,
+      range,
+      periodLabel: period.label,
+      compLabel: period.compLabel,
       retentionRate,
-      activeClients: active.length,
-      totalClients: total,
+      activeClients: activeClients.length,
+      totalClients,
       churnedCount: churned.length,
-      churnRate: total > 0 ? Math.round((churned.length / total) * 100) : 0,
+      churnRate: totalClients > 0 ? Math.round((churned.length / totalClients) * 100) : 0,
+      newClientsInPeriod,
+      atRiskCount,
     });
   } catch (err) {
+    console.error('[studio-analytics]', err.message);
     res.status(502).json({ error: err.message, live: false });
   }
 });
