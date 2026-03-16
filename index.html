@@ -174,7 +174,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .item-bar{height:4px;border-radius:2px;background:#F3F4F6;margin-top:4px;}
 .item-bar-fill{height:100%;border-radius:2px;}
 /* Heatmap */
-.heatmap{display:grid;grid-template-columns:44px repeat(7,1fr);gap:2px;font-size:10px;}
+.heatmap{display:grid;gap:2px;font-size:10px;}
 .heatmap-cell{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:default;min-height:22px;}
 .heatmap-label{display:flex;align-items:center;font-size:10px;color:#6B7280;}
 .heatmap-header{text-align:center;font-size:10px;color:#6B7280;font-weight:500;padding:2px 0;}
@@ -784,7 +784,7 @@ const add = (d,n) => { const dt=new Date(d); dt.setDate(dt.getDate()+n); return 
 // ─── API calls with 5-second timeout ──────────────────────────────────────────
 async function api(path, params='') {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
   try {
     const res = await fetch(`${PROXY}/api/mb/${path}${params}`, {
       headers: { 'x-session-token': token },
@@ -964,7 +964,7 @@ async function loadAnalytics() {
   $('an-err').style.display = 'none';
   try {
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 5000);
+    const tid = setTimeout(() => controller.abort(), 25000);
     const res = await fetch(`${PROXY}/api/analytics/overview?range=${anPeriod}`, {
       headers: { 'x-session-token': token },
       signal: controller.signal
@@ -1394,27 +1394,31 @@ function renderStudioHeatmap(d) {
   }
 
   const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const dayOrder = [1,2,3,4,5,6,0];
-  const maxCount = Math.max.apply(null, heatmap.map(h => h.count || 0));
-  if (maxCount <= 0) return;
+  const dayOrder = [1,2,3,4,5,6,0]; // Mon-Sun
+  const startHr = 6, endHr = 20;
+  const numHours = endHr - startHr + 1;
+  const maxCount = Math.max.apply(null, heatmap.map(h => h.count || 0)) || 1;
 
   const lookup = {};
   heatmap.forEach(h => { lookup[h.day + '-' + h.hour] = h.count; });
 
-  let html = '<div class="heatmap">';
+  let html = '<div class="heatmap" style="grid-template-columns:44px repeat(' + numHours + ',1fr);">';
+  // Header row: empty corner + hour labels
   html += '<div class="heatmap-label"></div>';
-  for (let di = 0; di < 7; di++) {
-    html += '<div class="heatmap-header">' + dayNames[dayOrder[di]] + '</div>';
+  for (let hr = startHr; hr <= endHr; hr++) {
+    const hrLabel = hr < 12 ? hr + 'a' : hr === 12 ? '12p' : (hr - 12) + 'p';
+    html += '<div class="heatmap-header" style="text-align:center;font-size:9px;">' + hrLabel + '</div>';
   }
-  for (let hr = 6; hr <= 20; hr++) {
-    const hrLabel = hr === 0 ? '12am' : hr < 12 ? hr + 'am' : hr === 12 ? '12pm' : (hr - 12) + 'pm';
-    html += '<div class="heatmap-label">' + hrLabel + '</div>';
-    for (let di2 = 0; di2 < 7; di2++) {
-      const dayIdx = dayOrder[di2];
+  // Each row = one day (Mon-Sun)
+  for (let di = 0; di < 7; di++) {
+    const dayIdx = dayOrder[di];
+    html += '<div class="heatmap-label">' + dayNames[dayIdx] + '</div>';
+    for (let hr = startHr; hr <= endHr; hr++) {
       const count = lookup[dayIdx + '-' + hr] || 0;
       const intensity = count / maxCount;
       const bg = intensity === 0 ? '#F3F4F6' : 'rgba(13,61,32,' + (0.15 + intensity * 0.85).toFixed(2) + ')';
       const textColor = intensity > 0.5 ? '#fff' : '#6B7280';
+      const hrLabel = hr < 12 ? hr + 'am' : hr === 12 ? '12pm' : (hr - 12) + 'pm';
       html += '<div class="heatmap-cell" style="background:' + bg + ';color:' + textColor + ';" title="' + dayNames[dayIdx] + ' at ' + hrLabel + ': ' + count + ' bookings">' + (count > 0 ? count : '') + '</div>';
     }
   }
@@ -2200,7 +2204,7 @@ function loadKitchenCustomRange() {
 
 // (renderKitYoY and renderKitItemAnalytics replaced by renderKitCategories and renderKitTopItems above)
 
-// ─── Order heatmap (Hours on Y-axis, Days on X-axis) ────────────────────────
+// ─── Order heatmap (Hours on X-axis, Days on Y-axis) ────────────────────────
 function renderKitHeatmap(d) {
   var el = $('kit-heatmap');
   if (!el) return;
@@ -2211,32 +2215,33 @@ function renderKitHeatmap(d) {
   }
 
   var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  // Order: Mon-Sun
-  var dayOrder = [1,2,3,4,5,6,0];
+  var dayOrder = [1,2,3,4,5,6,0]; // Mon-Sun
+  var startHr = 7, endHr = 23;
+  var numHours = endHr - startHr + 1;
   var maxCount = Math.max.apply(null, heatmap.map(function(h) { return h.count; }));
   if (maxCount <= 0) maxCount = 1;
 
-  // Build lookup: key = "day-hour"
   var lookup = {};
   heatmap.forEach(function(h) { lookup[h.day + '-' + h.hour] = h.count; });
 
-  var html = '<div class="heatmap">';
-  // Header row: empty corner + day names
+  var html = '<div class="heatmap" style="grid-template-columns:44px repeat(' + numHours + ',1fr);">';
+  // Header row: empty corner + hour labels
   html += '<div class="heatmap-label"></div>';
-  for (var di = 0; di < 7; di++) {
-    html += '<div class="heatmap-header">' + dayNames[dayOrder[di]] + '</div>';
+  for (var hr = startHr; hr <= endHr; hr++) {
+    var hLabel = hr < 12 ? hr + 'a' : hr === 12 ? '12p' : (hr - 12) + 'p';
+    html += '<div class="heatmap-header" style="text-align:center;font-size:9px;">' + hLabel + '</div>';
   }
-  // Each row = one hour (7am to 23pm covers restaurant hours)
-  for (var hr = 7; hr <= 23; hr++) {
-    var hrLabel = hr === 0 ? '12am' : hr < 12 ? hr + 'am' : hr === 12 ? '12pm' : (hr - 12) + 'pm';
-    html += '<div class="heatmap-label">' + hrLabel + '</div>';
-    for (var di2 = 0; di2 < 7; di2++) {
-      var dayIdx = dayOrder[di2];
-      var count = lookup[dayIdx + '-' + hr] || 0;
+  // Each row = one day (Mon-Sun)
+  for (var di = 0; di < 7; di++) {
+    var dayIdx = dayOrder[di];
+    html += '<div class="heatmap-label">' + dayNames[dayIdx] + '</div>';
+    for (var hr2 = startHr; hr2 <= endHr; hr2++) {
+      var count = lookup[dayIdx + '-' + hr2] || 0;
       var intensity = count / maxCount;
       var bg = intensity === 0 ? '#F3F4F6' : 'rgba(217,119,6,' + (0.15 + intensity * 0.85).toFixed(2) + ')';
       var textColor = intensity > 0.5 ? '#fff' : '#6B7280';
       var pctOfMax = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+      var hrLabel = hr2 < 12 ? hr2 + 'am' : hr2 === 12 ? '12pm' : (hr2 - 12) + 'pm';
       var tip = dayNames[dayIdx] + ' at ' + hrLabel + ': ' + count + ' orders (' + pctOfMax + '% of peak)';
       html += '<div class="heatmap-cell" style="background:' + bg + ';color:' + textColor + ';" title="' + tip + '">' + (count > 0 ? count : '') + '</div>';
     }
