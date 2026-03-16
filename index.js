@@ -419,8 +419,8 @@ async function handleAutomations(event) {
         console.log(`[automation] Welcome email sent to ${email}`);
       }
     }
-    if (type === 'clientVisit.created' || type === 'class.checkin') {
-      const clientId = payload.clientId || payload.ClientId;
+    if (type === 'clientVisit.created' || type === 'class.checkin' || type === 'classRosterBooking.created') {
+      const clientId = payload.clientId || payload.ClientId || payload.clientUniqueId || payload.ClientUniqueId;
       const siteId = CONFIG.siteId;
       if (!clientId) return;
       const mbToken = await getMBToken();
@@ -456,10 +456,14 @@ async function handleAutomations(event) {
         }
       }
     }
-    if (type === 'clientPurchase.created' || type === 'sale.created') {
-      const clientId = payload.clientId || payload.ClientId;
-      const itemName = (payload.itemName || payload.Description || '').toLowerCase();
-      if (!clientId || !itemName.includes('10')) return;
+    if (type === 'clientPurchase.created' || type === 'sale.created' || type === 'clientSale.created') {
+      const clientId = payload.clientId || payload.ClientId || payload.purchasingClientId || payload.PurchasingClientId;
+      // Webhook payload may have items array or top-level description
+      const items = payload.items || payload.Items || [];
+      const itemName = items.length > 0
+        ? items.map(i => i.name || i.Name || i.description || i.Description || '').join(' ')
+        : (payload.itemName || payload.Description || payload.description || '');
+      if (!clientId || !itemName.toLowerCase().includes('10')) return;
       const mbToken = await getMBToken();
       const salesRes = await fetch(`${MB_BASE}/sale/sales?clientId=${clientId}`, {
         headers: mbHeaders(mbToken)
@@ -541,6 +545,56 @@ app.get('/api/webhooks/subscriptions', requireAuth, async (req, res) => {
   }
 });
 
+// Activate ALL pending subscriptions at once
+app.post('/api/webhooks/activate-all', requireAuth, async (req, res) => {
+  try {
+    const r = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions`, {
+      headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+    }, 10000);
+    const data = await r.json();
+    const subs = Array.isArray(data) ? data : (data.Subscriptions || data.subscriptions || []);
+    const pending = subs.filter(s => (s.Status || s.status || '').toLowerCase().includes('pending'));
+    const results = [];
+    for (const sub of pending) {
+      const id = sub.SubscriptionId || sub.subscriptionId || sub.Id || sub.id;
+      try {
+        const actRes = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${id}/activate`, {
+          method: 'PATCH',
+          headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Active' }),
+        }, 10000);
+        const actData = await actRes.json();
+        results.push({ id, status: actData.Status || actData.status || 'activated', response: actData });
+      } catch (err) {
+        results.push({ id, status: 'error', error: err.message });
+      }
+    }
+    res.json({ total: subs.length, pending: pending.length, results });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
+// Delete a webhook subscription by ID
+app.delete('/api/webhooks/subscriptions/:subId', requireAuth, async (req, res) => {
+  try {
+    const { subId } = req.params;
+    console.log(`[webhooks] Deleting subscription ${subId}...`);
+    const r = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${subId}`, {
+      method: 'DELETE',
+      headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+    }, 10000);
+    if (r.status === 204 || r.status === 200) {
+      res.json({ status: 'deleted', subscriptionId: subId });
+    } else {
+      const data = await r.json().catch(() => ({}));
+      res.json({ status: 'failed', subscriptionId: subId, response: data });
+    }
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 // Create + activate webhook subscriptions for all email automation events
 app.post('/api/webhooks/setup', requireAuth, async (req, res) => {
   const webhookUrl = req.body.webhookUrl;
@@ -550,11 +604,13 @@ app.post('/api/webhooks/setup', requireAuth, async (req, res) => {
   // client.created → Welcome email
   // client.updated → Track changes
   // classRosterBooking.created → After class check-in (first visit, intro complete, last credit)
-  // sale.created → Membership upsell trigger (after 2nd 10-pack)
+  // clientSale.created → Membership upsell trigger (after 2nd 10-pack purchase)
+  // clientMembershipAssignment.created → Track new memberships
   const eventSets = [
     { events: ['client.created', 'client.updated'], ref: 'psc-client-events' },
     { events: ['classRosterBooking.created'], ref: 'psc-class-events' },
-    { events: ['sale.created'], ref: 'psc-sale-events' },
+    { events: ['clientSale.created'], ref: 'psc-sale-events' },
+    { events: ['clientMembershipAssignment.created'], ref: 'psc-membership-events' },
   ];
 
   const results = [];
@@ -576,12 +632,14 @@ app.post('/api/webhooks/setup', requireAuth, async (req, res) => {
       const createData = await createRes.json();
       console.log(`[webhooks] Create response:`, JSON.stringify(createData).substring(0, 300));
 
-      if (createData.error || createData.Error) {
-        results.push({ events: set.events, status: 'create_failed', error: createData.error || createData.Error });
+      if (createData.Errors || createData.errors || createData.error || createData.Error) {
+        const errDetail = createData.Errors || createData.errors || createData.error || createData.Error;
+        results.push({ events: set.events, status: 'create_failed', error: errDetail });
         continue;
       }
 
-      const subId = createData.subscriptionId || createData.id || createData.Id;
+      // MindBody returns PascalCase: SubscriptionId
+      const subId = createData.SubscriptionId || createData.subscriptionId || createData.id || createData.Id;
       if (!subId) {
         results.push({ events: set.events, status: 'no_subscription_id', response: createData });
         continue;
@@ -614,6 +672,24 @@ app.post('/api/webhooks/setup', requireAuth, async (req, res) => {
     webhookUrl,
     subscriptions: results,
   });
+});
+
+// Activate a specific pending subscription by ID
+app.post('/api/webhooks/activate/:subId', requireAuth, async (req, res) => {
+  try {
+    const { subId } = req.params;
+    console.log(`[webhooks] Manually activating subscription ${subId}...`);
+    const r = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${subId}/activate`, {
+      method: 'PATCH',
+      headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'Active' }),
+    }, 10000);
+    const data = await r.json();
+    console.log(`[webhooks] Activate response:`, JSON.stringify(data).substring(0, 300));
+    res.json(data);
+  } catch (err) {
+    res.json({ error: err.message });
+  }
 });
 
 // ─── Health ───────────────────────────────────────────────────────────────────
