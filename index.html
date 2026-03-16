@@ -373,66 +373,74 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="an-err" class="err-box" style="display:none;"></div>
       <div id="an-body" style="display:none;">
         <!-- Period selector -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
           <div style="display:flex;gap:4px;">
             <button class="btn tf-an" onclick="setAnPeriod('1d',this)" id="an-1d" style="font-size:11px;padding:4px 12px;">1D</button>
             <button class="btn tf-an" onclick="setAnPeriod('1w',this)" id="an-1w" style="font-size:11px;padding:4px 12px;">1W</button>
-            <button class="btn tf-an" onclick="setAnPeriod('1m',this)" id="an-1m" style="font-size:11px;padding:4px 12px;background:#16A34A;color:#fff;border-color:#16A34A;">1M</button>
+            <button class="btn tf-an" onclick="setAnPeriod('1m',this)" id="an-1m" style="font-size:11px;padding:4px 12px;background:#0D3D20;color:#fff;border-color:#0D3D20;">1M</button>
             <button class="btn tf-an" onclick="setAnPeriod('3m',this)" id="an-3m" style="font-size:11px;padding:4px 12px;">3M</button>
             <button class="btn tf-an" onclick="setAnPeriod('1y',this)" id="an-1y" style="font-size:11px;padding:4px 12px;">1Y</button>
           </div>
           <div style="font-size:11px;color:#6B7280;" id="an-updated"></div>
         </div>
-        <!-- KPI row -->
+
+        <!-- Sales Summary (4 cards) -->
         <div class="an-grid" id="an-kpis"></div>
-        <!-- Sales trend + forecast -->
+
+        <!-- Attendance Summary (4 cards) -->
+        <div class="an-grid" id="an-attendance-summary" style="margin-bottom:14px;"></div>
+
+        <!-- Daily Attendance Chart -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t">Daily Attendance</div>
+          <div id="an-attendance-chart" style="height:160px;"></div>
+          <div id="an-attendance-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
+        </div>
+
+        <!-- Top Classes (expandable) -->
         <div class="card" style="margin-bottom:14px;">
           <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
-            Sales trend & forecast
+            Top Classes
+            <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Click to expand</span>
+          </div>
+          <div id="an-top-classes"></div>
+        </div>
+
+        <!-- Instructor Leaderboard -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t">Instructor Leaderboard</div>
+          <div id="an-instructors"></div>
+        </div>
+
+        <!-- Client Health -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t">Client Health</div>
+          <div id="an-health-section"></div>
+        </div>
+
+        <!-- Revenue by Service -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t">Revenue by Service</div>
+          <div id="an-revenue-service"></div>
+        </div>
+
+        <!-- Heatmap -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t">Booking Heatmap — Day × Hour</div>
+          <div id="an-heatmap"></div>
+        </div>
+
+        <!-- Trend & Forecast -->
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
+            Revenue Trend & Forecast
             <span style="font-size:10px;color:#9CA3AF;font-weight:400;">Dashed = projected</span>
           </div>
           <div id="an-trend-chart" style="height:160px;"></div>
           <div id="an-trend-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
           <div id="an-trend-summary" style="margin-top:10px;"></div>
         </div>
-        <!-- Charts row -->
-        <div class="g2">
-          <div class="card">
-            <div class="card-t">Revenue trend (weekly)</div>
-            <div id="an-revenue-chart" style="height:120px;"></div>
-            <div id="an-revenue-labels" style="display:flex;justify-content:space-between;font-size:10px;color:#9CA3AF;margin-top:4px;"></div>
-          </div>
-          <div class="card">
-            <div class="card-t">Class fill rates</div>
-            <div id="an-fill-chart"></div>
-          </div>
-        </div>
-        <div class="g2">
-          <!-- At-risk clients -->
-          <div class="card">
-            <div class="card-t" style="display:flex;align-items:center;justify-content:space-between;">
-              At-risk clients
-              <span class="badge b-r" id="an-risk-count">0</span>
-            </div>
-            <div style="font-size:11px;color:#6B7280;margin-bottom:10px;">No visit in 14+ days — may be churning</div>
-            <div id="an-risk-list"></div>
-          </div>
-          <!-- Retention -->
-          <div class="card">
-            <div class="card-t">Client retention</div>
-            <div style="display:flex;align-items:center;gap:20px;margin-bottom:14px;">
-              <div id="an-retention-ring"></div>
-              <div>
-                <div style="font-size:22px;font-weight:700;color:#111827;" id="an-retention-pct">—%</div>
-                <div style="font-size:11px;color:#6B7280;">Retention rate</div>
-                <div style="margin-top:8px;">
-                  <div style="font-size:12px;color:#374151;" id="an-retention-detail"></div>
-                </div>
-              </div>
-            </div>
-            <div id="an-churn-alerts"></div>
-          </div>
-        </div>
+
         <!-- Recommendations -->
         <div class="card" style="margin-bottom:16px;">
           <div class="card-t">Business recommendations</div>
@@ -946,7 +954,7 @@ let anData = null;
 function setAnPeriod(p, btn) {
   anPeriod = p;
   document.querySelectorAll('.tf-an').forEach(b => { b.style.background='#fff'; b.style.color='#374151'; b.style.borderColor='#D1D5DB'; });
-  if (btn) { btn.style.background='#16A34A'; btn.style.color='#fff'; btn.style.borderColor='#16A34A'; }
+  if (btn) { btn.style.background='#0D3D20'; btn.style.color='#fff'; btn.style.borderColor='#0D3D20'; }
   loaded['analytics'] = false;
   loadAnalytics();
 }
@@ -978,29 +986,72 @@ async function loadAnalytics() {
 
 function getDemoAnalytics() {
   // Scale demo data based on selected time frame
-  const weekCounts = { '1d': 1, '1w': 1, '1m': 5, '3m': 13, '1y': 11, '7d': 1, '30d': 5, '90d': 13, 'ytd': 11 };
+  const weekCounts = { '1d': 1, '1w': 7, '1m': 30, '3m': 90, '1y': 365, '7d': 7, '30d': 30, '90d': 90, 'ytd': 75 };
   const revMultipliers = { '1d': 0.04, '1w': 0.25, '1m': 1, '3m': 3, '1y': 3.5, '7d': 0.25, '30d': 1, '90d': 3, 'ytd': 3.5 };
   const rm = revMultipliers[anPeriod] || 1;
-  const wc = weekCounts[anPeriod] || 5;
+  const wc = Math.min(weekCounts[anPeriod] || 30, 30); // Cap at 30 for display
 
-  // Generate weekly revenue dynamically
-  var weeklyRevenue = [];
+  // Generate daily revenue dynamically
+  var dailyRevenue = [];
   var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var now = new Date();
-  for (var w = wc - 1; w >= 0; w--) {
-    var wDate = new Date(now - (w+1)*7*24*60*60*1000);
-    var base = 2200 + Math.sin(w * 0.6) * 350 + (wc - w) * 40;
-    var label = wc <= 6 ? 'W' + (wc - w) : monthNames[wDate.getMonth()] + ' ' + wDate.getDate();
-    weeklyRevenue.push({ label: label, amount: Math.round(base) });
+  for (var d = wc - 1; d >= 0; d--) {
+    var dDate = new Date(now - d*24*60*60*1000);
+    var base = 600 + Math.sin(d * 0.3) * 150 + (wc - d) * 10;
+    var label = dDate.getDate() + ' ' + monthNames[dDate.getMonth()];
+    dailyRevenue.push({ label: label, amount: Math.round(base) });
+  }
+
+  // Generate daily attendance
+  var dailyAttendance = dailyRevenue.map(d => ({ label: d.label, visits: Math.round(d.amount / 80) }));
+
+  // Generate class data
+  var classes = [
+    { name:'Classic Lagree', booked:156, capacity:180, sessions:18, fillGrowth:8, schedule:'Daily 9am, 6pm' },
+    { name:'Legs & Abs', booked:162, capacity:180, sessions:18, fillGrowth:12, schedule:'M/W/F/Sun 10:30am' },
+    { name:'Intro Lagree', booked:108, capacity:135, sessions:15, fillGrowth:5, schedule:'T/Th/Sat 11am' },
+    { name:'Mat Pilates', booked:72, capacity:120, sessions:12, fillGrowth:-3, schedule:'W/Fri 12pm' },
+    { name:'Aerial Yoga', booked:60, capacity:80, sessions:8, fillGrowth:2, schedule:'Tue/Thu 4pm' },
+    { name:'Outdoor Pilates', booked:40, capacity:80, sessions:8, fillGrowth:-8, schedule:'Sat/Sun 8am' },
+  ];
+
+  // Generate instructor data
+  var instructors = [
+    { name:'Sarah Mitchell', classes:12, bookings:156, growth:8 },
+    { name:'Alex Chen', classes:11, bookings:148, growth:5 },
+    { name:'Lisa Rodriguez', classes:10, bookings:135, growth:3 },
+    { name:'Marcus Johnson', classes:8, bookings:98, growth:-2 },
+    { name:'Emma Davies', classes:7, bookings:84, growth:6 },
+  ];
+
+  // Generate service revenue
+  var serviceRevenue = [
+    { name:'Class Packages', amount: Math.round(8210 * rm) },
+    { name:'Memberships', amount: Math.round(6840 * rm) },
+    { name:'Personal Training', amount: Math.round(2370 * rm) },
+    { name:'Workshops', amount: Math.round(1000 * rm) },
+  ];
+
+  // Generate booking heatmap (random)
+  var heatmap = [];
+  for (let d = 0; d < 7; d++) {
+    for (let h = 6; h <= 20; h++) {
+      const peakHours = [9, 10, 17, 18];
+      const basePeak = peakHours.includes(h) ? 8 : 3;
+      heatmap.push({ day: d, hour: h, count: basePeak + Math.floor(Math.random() * 4) });
+    }
   }
 
   return {
     live: false,
-    range: anPeriod, rangeDays: { '1d':1, '1w':7, '1m':30, '3m':90, '1y':75, '7d':7, '30d':30, '90d':90, 'ytd':75 }[anPeriod] || 30,
+    range: anPeriod, rangeDays: weekCounts[anPeriod] || 30,
     totalClients: 142, activeClients: 118, newThisMonth: Math.round(14 * rm),
     classesThisMonth: Math.round(96 * rm), totalBooked: Math.round(672 * rm), avgFillRate: 78,
     totalRevenue: Math.round(18420 * rm),
-    atRiskCount: 9,
+    totalVisits: Math.round(672 * rm), totalBookings: Math.round(672 * rm),
+    revGrowth: 12, classesGrowth: 5, fillGrowth: 3, membersGrowth: 8,
+    visitsGrowth: 12, bookingsGrowth: 7, newClientsGrowth: 15, retentionGrowth: 2,
+    atRiskCount: 6,
     atRiskClients: [
       { name:'James Mitchell', email:'james@email.com', lastSeen:'2026-02-24T10:00:00', visits:23 },
       { name:'Maria Garcia', email:'maria@email.com', lastSeen:'2026-02-20T14:00:00', visits:8 },
@@ -1009,145 +1060,121 @@ function getDemoAnalytics() {
       { name:'Carlos Ruiz', email:'carlos@email.com', lastSeen:'2026-02-15T16:00:00', visits:31 },
       { name:'Emma Johnson', email:'emma@email.com', lastSeen:'2026-02-26T08:00:00', visits:6 },
     ],
-    weeklyRevenue: weeklyRevenue,
-    fillRatesByClass: [
-      { name:'Classic Lagree', rate:86, trend:'up' },
-      { name:'Legs & Abs', rate:90, trend:'up' },
-      { name:'Intro Lagree', rate:80, trend:'flat' },
-      { name:'Mat Pilates', rate:60, trend:'down' },
-      { name:'Aerial Yoga', rate:75, trend:'flat' },
-      { name:'Outdoor Pilates', rate:50, trend:'down' },
-    ],
+    dailyRevenue: dailyRevenue,
+    weeklyRevenue: dailyRevenue,
+    dailyAttendance: dailyAttendance,
+    classes: classes,
+    instructors: instructors,
+    serviceRevenue: serviceRevenue,
+    bookingHeatmap: heatmap,
     retentionRate: 83,
     churnRate: 8,
     churnedCount: 11,
+    compLabel: 'vs prior period'
   };
 }
 
 function renderAnalytics(d) {
-  $('an-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${d.live ? 'Live data' : 'Demo data'}`;
+  const rangeLabels = {'1d':'Today','1w':'This Week','1m':'This Month','3m':'Last 3 Months','1y':'Year to Date'};
+  const rangeLabel = d.periodLabel || rangeLabels[d.range || anPeriod] || 'This Month';
+  const compLabel = d.compLabel || 'vs prior period';
+  $('an-updated').textContent = `Updated ${new Date().toLocaleTimeString()} · ${d.live ? 'Live data' : 'Demo data'} · ${rangeLabel}`;
+  const cur = '€';
 
-  // KPI cards
-  const revGrowth = d.weeklyRevenue ? Math.round(((d.weeklyRevenue[d.weeklyRevenue.length-1]?.amount||0) / Math.max(d.weeklyRevenue[0]?.amount||1,1) - 1)*100) : 12;
-  $('an-kpis').innerHTML = `
-    <div class="an-stat">
-      <div class="an-stat-ico">$</div>
-      <div class="stat-l">Monthly revenue</div>
-      <div class="stat-v">${d.totalRevenue >= 1000 ? (d.totalRevenue/1000).toFixed(1)+'k' : d.totalRevenue}</div>
-      <div class="an-pill ${revGrowth>=0?'an-up':'an-down'}">${revGrowth>=0?'+':''}${revGrowth}% vs prior</div>
-    </div>
-    <div class="an-stat">
-      <div class="an-stat-ico">R</div>
-      <div class="stat-l">Retention rate</div>
-      <div class="stat-v">${d.retentionRate||83}%</div>
-      <div class="an-pill an-up">Healthy</div>
-    </div>
-    <div class="an-stat">
-      <div class="an-stat-ico">F</div>
-      <div class="stat-l">Avg fill rate</div>
-      <div class="stat-v">${d.avgFillRate}%</div>
-      <div class="an-pill ${d.avgFillRate>=75?'an-up':d.avgFillRate>=60?'an-flat':'an-down'}">${d.avgFillRate>=75?'On target':'Needs attention'}</div>
-    </div>
-    <div class="an-stat">
-      <div class="an-stat-ico">!</div>
-      <div class="stat-l">At-risk clients</div>
-      <div class="stat-v" style="color:#DC2626;">${d.atRiskCount}</div>
-      <div class="an-pill an-down">14+ days absent</div>
-    </div>
-    <div class="an-stat">
-      <div class="an-stat-ico">+</div>
-      <div class="stat-l">New this month</div>
-      <div class="stat-v">${d.newThisMonth}</div>
-      <div class="an-pill an-up">Growing</div>
-    </div>`;
-
-  // Sales trend + forecast chart for Studio
-  renderAnTrend(d);
-
-  // Revenue chart
-  const revData = d.weeklyRevenue || d.sales || [];
-  const maxRev = Math.max(...revData.map(r => r.amount || 0), 1);
-  if (revData.length) {
-    $('an-revenue-chart').innerHTML = `<div class="an-bar-row">${revData.map((r, i) =>
-      `<div class="an-bar" style="height:${Math.max((r.amount/maxRev)*100,4)}%;background:${i===revData.length-1?'#16A34A':'#D1FAE5'};" data-tip="${r.label}: ${r.amount}"></div>`
-    ).join('')}</div>`;
-    $('an-revenue-labels').innerHTML = revData.map(r => `<span>${r.label||''}</span>`).join('');
-  } else {
-    // Build from classes/sales data
-    const weeks = buildWeeklyRevenue(d);
-    const mx = Math.max(...weeks.map(w=>w.amount),1);
-    $('an-revenue-chart').innerHTML = `<div class="an-bar-row">${weeks.map((w,i)=>
-      `<div class="an-bar" style="height:${Math.max((w.amount/mx)*100,4)}%;background:${i===weeks.length-1?'#16A34A':'#D1FAE5'};" data-tip="${w.label}: ${w.amount}"></div>`
-    ).join('')}</div>`;
-    $('an-revenue-labels').innerHTML = weeks.map(w => `<span>${w.label}</span>`).join('');
+  // Growth pill helper — shows what it compares against
+  function gPill(val) {
+    if (val === undefined || val === null) return '';
+    const cls = val > 0 ? 'an-up' : val < 0 ? 'an-down' : 'an-flat';
+    return `<div class="an-pill ${cls}" title="${val > 0 ? '+' : ''}${val}% ${compLabel}">${val > 0 ? '+' : ''}${val}% <span style="font-size:9px;opacity:0.8;">${compLabel}</span></div>`;
   }
 
-  // Fill rates
-  const fillData = d.fillRatesByClass || buildFillRates(d);
-  $('an-fill-chart').innerHTML = fillData.map(f => {
-    const color = f.rate >= 80 ? '#16A34A' : f.rate >= 60 ? '#D97706' : '#DC2626';
-    const arrow = f.trend === 'up' ? '&#9650;' : f.trend === 'down' ? '&#9660;' : '&#9654;';
-    const arrowColor = f.trend === 'up' ? '#16A34A' : f.trend === 'down' ? '#DC2626' : '#D97706';
-    return `<div class="ab-wrap"><div class="ab-lbl"><span>${f.name}</span><span style="display:flex;align-items:center;gap:4px;">${f.rate}% <span style="color:${arrowColor};font-size:9px;">${arrow}</span></span></div><div class="ab-track"><div class="ab-fill" style="width:${f.rate}%;background:${color};"></div></div></div>`;
-  }).join('');
+  const fmt = (v) => v >= 1000 ? (v/1000).toFixed(1) + 'k' : (typeof v === 'number' ? v.toFixed(0) : v);
 
-  // At-risk clients
-  const risks = d.atRiskClients || [];
-  $('an-risk-count').textContent = risks.length;
-  $('an-risk-list').innerHTML = risks.length ? risks.map(c => {
-    const daysAgo = c.lastSeen ? Math.floor((Date.now() - new Date(c.lastSeen).getTime()) / (24*60*60*1000)) : '?';
-    const severity = daysAgo > 21 ? 'b-r' : daysAgo > 14 ? 'b-a' : 'b-b';
-    return `<div class="an-alert">
-      <div class="av" style="background:#FEE2E2;color:#991B1B;width:28px;height:28px;font-size:10px;">${c.name.split(' ').map(x=>x[0]).join('')}</div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:500;">${c.name}</div>
-        <div style="font-size:11px;color:#6B7280;">${c.visits} visits · Last seen ${daysAgo}d ago</div>
-      </div>
-      <span class="badge ${severity}">${daysAgo}d</span>
-    </div>`;
-  }).join('') : '<div style="font-size:12px;color:#6B7280;padding:12px;">No at-risk clients detected</div>';
-
-  // Retention ring
-  const ret = d.retentionRate || 83;
-  const retColor = ret >= 80 ? '#16A34A' : ret >= 65 ? '#D97706' : '#DC2626';
-  const circumference = 2 * Math.PI * 34;
-  const offset = circumference - (ret / 100) * circumference;
-  $('an-retention-ring').innerHTML = `<svg width="80" height="80" viewBox="0 0 80 80">
-    <circle cx="40" cy="40" r="34" fill="none" stroke="#F3F4F6" stroke-width="6"/>
-    <circle cx="40" cy="40" r="34" fill="none" stroke="${retColor}" stroke-width="6"
-      stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
-      stroke-linecap="round" transform="rotate(-90 40 40)"/>
-    <text x="40" y="44" text-anchor="middle" font-size="16" font-weight="700" fill="${retColor}">${ret}%</text>
-  </svg>`;
-  $('an-retention-pct').textContent = ret + '%';
-  $('an-retention-pct').style.color = retColor;
-  $('an-retention-detail').innerHTML = `${d.activeClients||118} active / ${d.totalClients||142} total<br><span style="color:#991B1B;">Churn: ${d.churnRate||8}% (${d.churnedCount||11} clients)</span>`;
-
-  // Churn alerts
-  $('an-churn-alerts').innerHTML = `
-    <div class="${ret>=80?'an-alert an-alert-g':'an-alert'}">
-      <span style="font-size:16px;">${ret>=80?'&#10003;':'&#9888;'}</span>
-      <div style="flex:1;font-size:12px;">
-        <strong>${ret>=80?'Retention is healthy':'Retention needs attention'}</strong><br>
-        <span style="color:#6B7280;">${ret>=80?'Your retention rate is above 80%. Keep engaging lapsed clients with win-back emails.':'Consider running a win-back campaign for clients who haven\'t visited in 14+ days.'}</span>
-      </div>
+  // ── Sales Summary Row (4 cards) ────────────────────────────────────────────
+  $('an-kpis').innerHTML = `
+    <div style="padding:10px;background:#FFFBEB;border-radius:10px;">
+      <div style="font-size:10px;color:#92400E;text-transform:uppercase;letter-spacing:.5px;">Total Revenue</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${cur}${fmt(d.totalRevenue||0)}</div>
+      ${gPill(d.revGrowth)}
+    </div>
+    <div style="padding:10px;background:#F0FDF4;border-radius:10px;">
+      <div style="font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Total Classes</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.classesThisMonth||0}</div>
+      ${gPill(d.classesGrowth)}
+    </div>
+    <div style="padding:10px;background:#F9FAFB;border-radius:10px;">
+      <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Avg Fill Rate</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.avgFillRate||0}%</div>
+      ${gPill(d.fillGrowth)}
+    </div>
+    <div style="padding:10px;background:#F9FAFB;border-radius:10px;">
+      <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Active Members</div>
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.activeClients||0}</div>
+      ${gPill(d.membersGrowth)}
     </div>`;
 
-  // Recommendations
+  // ── Attendance Summary Row (4 cards) ────────────────────────────────────────
+  const attSummaryEl = document.getElementById('an-attendance-summary');
+  if (attSummaryEl) {
+    attSummaryEl.innerHTML = `
+      <div style="padding:10px;background:#DCFCE7;border-radius:10px;">
+        <div style="font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Total Visits</div>
+        <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.totalVisits||0}</div>
+        ${gPill(d.visitsGrowth)}
+      </div>
+      <div style="padding:10px;background:#DBEAFE;border-radius:10px;">
+        <div style="font-size:10px;color:#0369A1;text-transform:uppercase;letter-spacing:.5px;">Total Bookings</div>
+        <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.totalBooked||0}</div>
+        ${gPill(d.bookingsGrowth)}
+      </div>
+      <div style="padding:10px;background:#F3E8FF;border-radius:10px;">
+        <div style="font-size:10px;color:#5B21B6;text-transform:uppercase;letter-spacing:.5px;">New Clients</div>
+        <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.newThisMonth||0}</div>
+        ${gPill(d.newClientsGrowth)}
+      </div>
+      <div style="padding:10px;background:#F0FDF4;border-radius:10px;">
+        <div style="font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Retention Rate</div>
+        <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.retentionRate||83}%</div>
+        ${gPill(d.retentionGrowth)}
+      </div>`;
+  }
+
+  // ── Daily Attendance Chart ──────────────────────────────────────────────────
+  renderAttendanceChart(d, cur);
+
+  // ── Top Classes (expandable) ────────────────────────────────────────────────
+  renderStudioClasses(d, cur);
+
+  // ── Instructor Leaderboard ──────────────────────────────────────────────────
+  renderStudioInstructors(d, cur);
+
+  // ── Client Health ──────────────────────────────────────────────────────────
+  renderClientHealth(d, cur, compLabel);
+
+  // ── Revenue by Service ───────────────────────────────────────────────────────
+  renderRevenueByService(d, cur);
+
+  // ── Heatmap ───────────────────────────────────────────────────────────────
+  renderStudioHeatmap(d);
+
+  // ── Trend & Forecast ───────────────────────────────────────────────────────
+  renderAnTrend(d, cur);
+
+  // ── Recommendations ───────────────────────────────────────────────────────
   renderRecommendations(d);
 }
 
 // ─── Studio trend + forecast chart ───────────────────────────────────────────
-function renderAnTrend(d) {
-  const weekly = d.weeklyRevenue || buildWeeklyRevenue(d);
-  if (!weekly.length) {
+function renderAnTrend(d, cur) {
+  const daily = d.dailyRevenue || d.weeklyRevenue || buildWeeklyRevenue(d);
+  if (!daily.length) {
     $('an-trend-chart').innerHTML = '<div style="color:#9CA3AF;font-size:12px;padding:20px;">No trend data available</div>';
     $('an-trend-labels').innerHTML = '';
     $('an-trend-summary').innerHTML = '';
     return;
   }
 
-  const vals = weekly.map(r => r.amount);
+  const vals = daily.map(r => r.amount);
   const forecastCount = 3;
   const fc = smartForecast(vals, forecastCount);
   const allVals = [...vals, ...fc.forecasts];
@@ -1158,30 +1185,30 @@ function renderAnTrend(d) {
     const val = allVals[i];
     const pct = Math.max((val / maxVal) * 100, 4);
     const isForecast = i >= vals.length;
-    const bg = isForecast ? 'transparent' : (i === vals.length - 1 ? '#16A34A' : '#D1FAE5');
-    const border = isForecast ? '2px dashed #16A34A' : 'none';
-    barsHtml += '<div class="an-bar" style="height:' + pct + '%;background:' + bg + ';border:' + border + ';border-radius:4px;" data-tip="' + (isForecast ? 'Forecast' : weekly[i].label) + ': ' + val + '"></div>';
+    const bg = isForecast ? 'transparent' : (i === vals.length - 1 ? '#0D3D20' : '#DCFCE7');
+    const border = isForecast ? '2px dashed #0D3D20' : 'none';
+    barsHtml += '<div class="an-bar" style="height:' + pct + '%;background:' + bg + ';border:' + border + ';border-radius:4px;" data-tip="' + (isForecast ? 'Forecast' : daily[i].label) + ': ' + val + '"></div>';
   }
   barsHtml += '</div>';
   $('an-trend-chart').innerHTML = barsHtml;
 
-  const labels = weekly.map(r => r.label);
+  const labels = daily.map(r => r.label);
   for (let i = 0; i < forecastCount; i++) labels.push('F' + (i+1));
   $('an-trend-labels').innerHTML = labels.map(function(l) { return '<span>' + l + '</span>'; }).join('');
 
-  const confColors = { high: '#16A34A', medium: '#D97706', low: '#DC2626' };
+  const confColors = { high: '#0D3D20', medium: '#D97706', low: '#DC2626' };
   const confBg = { high: '#F0FDF4', medium: '#FFF7ED', low: '#FEF2F2' };
-  const trendDir = fc.slope > 20 ? 'upward' : fc.slope < -20 ? 'downward' : 'stable';
-  const trendColor = fc.slope > 20 ? '#16A34A' : fc.slope < -20 ? '#DC2626' : '#D97706';
-  const trendIcon = fc.slope > 20 ? '&#9650;' : fc.slope < -20 ? '&#9660;' : '&#9654;';
+  const trendDir = fc.slope > 0.5 ? 'upward' : fc.slope < -0.5 ? 'downward' : 'stable';
+  const trendColor = fc.slope > 0.5 ? '#0D3D20' : fc.slope < -0.5 ? '#DC2626' : '#D97706';
+  const trendIcon = fc.slope > 0.5 ? '&#9650;' : fc.slope < -0.5 ? '&#9660;' : '&#9654;';
 
   $('an-trend-summary').innerHTML = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">' +
     '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
-      '<div style="font-size:11px;color:#166534;">Weekly average</div>' +
-      '<div style="font-size:18px;font-weight:700;color:#166534;">\u20AC' + Math.round(fc.yMean).toLocaleString() + '</div></div>' +
+      '<div style="font-size:11px;color:#166534;">Period average</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#166534;">€' + Math.round(fc.yMean).toLocaleString() + '</div></div>' +
     '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
-      '<div style="font-size:11px;color:#166534;">Next week forecast</div>' +
-      '<div style="font-size:18px;font-weight:700;color:#166534;">\u20AC' + fc.forecasts[0].toLocaleString() + '</div></div>' +
+      '<div style="font-size:11px;color:#166534;">Next period forecast</div>' +
+      '<div style="font-size:18px;font-weight:700;color:#166534;">€' + fc.forecasts[0].toLocaleString() + '</div></div>' +
     '<div style="flex:1;min-width:110px;padding:10px;background:#F0FDF4;border-radius:8px;border:1px solid #BBF7D0;">' +
       '<div style="font-size:11px;color:#166534;">Trend</div>' +
       '<div style="font-size:18px;font-weight:700;color:' + trendColor + ';">' + trendIcon + ' ' + trendDir + '</div></div>' +
@@ -1191,8 +1218,208 @@ function renderAnTrend(d) {
     '</div>' +
     '<div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;">' +
       '<div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:6px;">Forecast reasoning</div>' +
-      fc.reasons.map(function(r) { return '<div style="font-size:12px;color:#6B7280;padding:2px 0;display:flex;gap:6px;"><span style="color:#16A34A;">&#8226;</span>' + r + '</div>'; }).join('') +
+      fc.reasons.map(function(r) { return '<div style="font-size:12px;color:#6B7280;padding:2px 0;display:flex;gap:6px;"><span style="color:#0D3D20;">&#8226;</span>' + r + '</div>'; }).join('') +
     '</div>';
+}
+
+// ─── Attendance Chart (daily visits by day) ────────────────────────────────
+function renderAttendanceChart(d, cur) {
+  const el = document.getElementById('an-attendance-chart');
+  if (!el) return;
+  const chart = d.dailyAttendance || [];
+  if (!chart.length) {
+    el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No attendance data</div>';
+    return;
+  }
+  const maxCount = Math.max(...chart.map(c => c.visits || 0), 1);
+  el.innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:100%;">${chart.map(c => {
+    const h = Math.max((c.visits / maxCount) * 100, 2);
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;height:100%;justify-content:flex-end;" title="${c.label}: ${c.visits} visits">
+      <div style="width:70%;background:#0D3D20;border-radius:2px 2px 0 0;height:${h}%;min-height:2px;"></div>
+    </div>`;
+  }).join('')}</div>`;
+  const labelsEl = document.getElementById('an-attendance-labels');
+  if (labelsEl) {
+    labelsEl.innerHTML = chart.filter((_,i) => i % Math.ceil(chart.length/5) === 0).map(c => `<span>${c.label}</span>`).join('');
+  }
+}
+
+// ─── Top Classes (expandable list) ──────────────────────────────────────────
+function renderStudioClasses(d, cur) {
+  const el = document.getElementById('an-top-classes');
+  if (!el) return;
+  const classes = d.classes || [];
+  const comp = d.compLabel || 'vs prior period';
+  if (!classes.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No class data</div>'; return; }
+
+  el.innerHTML = classes.map(function(cls, idx) {
+    const fillRate = cls.capacity ? Math.round((cls.booked / cls.capacity) * 100) : 0;
+    const gCls = (cls.fillGrowth || 0) > 0 ? 'color:#0D3D20' : (cls.fillGrowth || 0) < 0 ? 'color:#DC2626' : 'color:#6B7280';
+    const gSign = (cls.fillGrowth || 0) > 0 ? '+' : '';
+
+    return '<div class="item-row" style="margin-bottom:2px;">' +
+      '<div onclick="this.parentElement.querySelector(\'.class-sessions\').classList.toggle(\'open\')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 8px;cursor:pointer;border-bottom:1px solid #F3F4F6;">' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span style="font-size:10px;color:#9CA3AF;">&#9660;</span>' +
+          '<span style="font-weight:600;font-size:13px;">' + cls.name + '</span>' +
+          '<span style="font-size:11px;color:#9CA3AF;">' + (cls.sessions || 0) + ' sessions</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:12px;">' +
+          '<div style="width:80px;height:6px;background:#F3F4F6;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#0D3D20;width:' + fillRate + '%;border-radius:3px;"></div></div>' +
+          '<span style="font-weight:600;font-size:13px;width:50px;text-align:right;">' + fillRate + '%</span>' +
+          '<span style="font-size:11px;width:70px;text-align:right;' + gCls + ';" title="' + gSign + cls.fillGrowth + '% ' + comp + '">' + gSign + (cls.fillGrowth||0) + '%</span>' +
+          '<span style="font-size:11px;width:60px;text-align:right;color:#6B7280;">' + cls.booked + '/' + cls.capacity + ' booked</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="class-sessions" style="max-height:0;overflow:hidden;transition:max-height .3s ease;font-size:12px;color:#6B7280;">' +
+        '<div style="padding:8px 16px;border-bottom:1px solid #F3F4F6;">Schedule: ' + (cls.schedule || 'Various times') + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  if (!document.getElementById('class-expand-style')) {
+    const s = document.createElement('style');
+    s.id = 'class-expand-style';
+    s.textContent = '.class-sessions.open{max-height:200px!important;}';
+    document.head.appendChild(s);
+  }
+}
+
+// ─── Instructor Leaderboard ───────────────────────────────────────────────────
+function renderStudioInstructors(d, cur) {
+  const el = document.getElementById('an-instructors');
+  if (!el) return;
+  const instructors = d.instructors || [];
+  const comp = d.compLabel || 'vs prior period';
+  if (!instructors.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No instructor data</div>'; return; }
+  const maxBookings = Math.max.apply(null, instructors.map(i => i.bookings || 0)) || 1;
+
+  el.innerHTML = instructors.map(function(inst, idx) {
+    const pct = Math.round((inst.bookings / maxBookings) * 100);
+    const gCls = (inst.growth || 0) > 0 ? 'color:#0D3D20' : (inst.growth || 0) < 0 ? 'color:#DC2626' : 'color:#6B7280';
+    const gSign = (inst.growth || 0) > 0 ? '+' : '';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #F3F4F6;">' +
+      '<div style="width:20px;font-size:11px;color:#9CA3AF;text-align:center;">' + (idx+1) + '</div>' +
+      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;">' + inst.name + '</div>' +
+        '<div style="height:4px;background:#F3F4F6;border-radius:2px;margin-top:4px;"><div style="height:100%;background:#0D3D20;width:' + pct + '%;border-radius:2px;"></div></div></div>' +
+      '<div style="width:80px;text-align:right;font-size:12px;color:#6B7280;">' + (inst.classes || 0) + ' classes</div>' +
+      '<div style="width:80px;text-align:right;font-size:13px;font-weight:600;">' + (inst.bookings || 0) + ' bookings</div>' +
+      '<div style="width:60px;text-align:right;font-size:11px;' + gCls + ';" title="' + gSign + (inst.growth||0) + '% ' + comp + '">' + gSign + (inst.growth||0) + '%</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ─── Client Health Section ────────────────────────────────────────────────────
+function renderClientHealth(d, cur, compLabel) {
+  const el = document.getElementById('an-health-section');
+  if (!el) return;
+  const ret = d.retentionRate || 83;
+  const retColor = ret >= 80 ? '#0D3D20' : ret >= 65 ? '#D97706' : '#DC2626';
+  const circumference = 2 * Math.PI * 34;
+  const offset = circumference - (ret / 100) * circumference;
+  const newClients = d.newThisMonth || 0;
+  const returning = (d.totalBooked || 0) - newClients;
+
+  el.innerHTML = `
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:14px;">
+      <div style="flex:0 0 auto;">
+        <svg width="120" height="120" viewBox="0 0 120 120">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#F3F4F6" stroke-width="8"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="${retColor}" stroke-width="8"
+            stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
+            stroke-linecap="round" transform="rotate(-90 60 60)"/>
+          <text x="60" y="65" text-anchor="middle" font-size="24" font-weight="700" fill="${retColor}">${ret}%</text>
+        </svg>
+      </div>
+      <div style="flex:1;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Retention Health</div>
+        <div style="font-size:12px;color:#6B7280;margin-bottom:12px;">${d.activeClients||0} active / ${d.totalClients||0} total</div>
+        <div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;font-size:11px;color:#374151;">
+          ${ret >= 80 ? '✓ Retention is strong' : ret >= 65 ? '⚠ Retention needs attention' : '✗ High churn detected'}
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:14px;">
+      <div style="flex:1;padding:12px;background:#F0FDF4;border-radius:8px;">
+        <div style="font-size:11px;color:#166534;font-weight:600;">New Clients</div>
+        <div style="font-size:18px;font-weight:700;color:#166534;">${newClients}</div>
+      </div>
+      <div style="flex:1;padding:12px;background:#DBEAFE;border-radius:8px;">
+        <div style="font-size:11px;color:#0369A1;font-weight:600;">Returning</div>
+        <div style="font-size:18px;font-weight:700;color:#0369A1;">${Math.max(0, returning)}</div>
+      </div>
+    </div>
+    <div style="font-weight:600;font-size:12px;margin-bottom:8px;">At-Risk Clients (${d.atRiskCount||0})</div>
+    <div style="max-height:200px;overflow-y:auto;">
+      ${(d.atRiskClients||[]).length ? (d.atRiskClients||[]).map(c => {
+        const daysAgo = c.lastSeen ? Math.floor((Date.now() - new Date(c.lastSeen).getTime()) / (24*60*60*1000)) : '?';
+        const severity = daysAgo > 21 ? 'b-r' : daysAgo > 14 ? 'b-a' : 'b-b';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #F3F4F6;font-size:11px;">' +
+          '<div style="width:24px;height:24px;background:#FEE2E2;border-radius:50%;color:#991B1B;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;">' + c.name.split(' ').map(x=>x[0]).join('') + '</div>' +
+          '<div style="flex:1;min-width:0;"><div style="font-weight:500;">' + c.name + '</div><div style="color:#6B7280;font-size:10px;">Last visit: ' + daysAgo + 'd ago</div></div>' +
+          '<span class="badge ' + severity + '">' + daysAgo + 'd</span>' +
+        '</div>';
+      }).join('') : '<div style="font-size:12px;color:#6B7280;padding:12px;">No at-risk clients detected</div>'}
+    </div>`;
+}
+
+// ─── Revenue by Service (horizontal bars) ──────────────────────────────────
+function renderRevenueByService(d, cur) {
+  const el = document.getElementById('an-revenue-service');
+  if (!el) return;
+  const services = d.serviceRevenue || [];
+  if (!services.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No service data</div>'; return; }
+  const total = services.reduce((a,s) => a + (s.amount||0), 0) || 1;
+
+  el.innerHTML = services.map(s => {
+    const pct = Math.round((s.amount / total) * 100);
+    return '<div style="margin-bottom:12px;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
+        '<span style="font-size:12px;font-weight:500;">' + s.name + '</span>' +
+        '<span style="font-size:12px;font-weight:600;">' + cur + (s.amount||0).toFixed(0) + ' (' + pct + '%)</span>' +
+      '</div>' +
+      '<div style="height:6px;background:#F3F4F6;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#0D3D20;width:' + pct + '%;border-radius:3px;"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+// ─── Studio Heatmap (hours × days) ────────────────────────────────────────
+function renderStudioHeatmap(d) {
+  const el = document.getElementById('an-heatmap');
+  if (!el) return;
+  const heatmap = d.bookingHeatmap || [];
+  if (!heatmap.length) {
+    el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">Heatmap available with live data</div>';
+    return;
+  }
+
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dayOrder = [1,2,3,4,5,6,0];
+  const maxCount = Math.max.apply(null, heatmap.map(h => h.count || 0));
+  if (maxCount <= 0) return;
+
+  const lookup = {};
+  heatmap.forEach(h => { lookup[h.day + '-' + h.hour] = h.count; });
+
+  let html = '<div class="heatmap">';
+  html += '<div class="heatmap-label"></div>';
+  for (let di = 0; di < 7; di++) {
+    html += '<div class="heatmap-header">' + dayNames[dayOrder[di]] + '</div>';
+  }
+  for (let hr = 6; hr <= 20; hr++) {
+    const hrLabel = hr === 0 ? '12am' : hr < 12 ? hr + 'am' : hr === 12 ? '12pm' : (hr - 12) + 'pm';
+    html += '<div class="heatmap-label">' + hrLabel + '</div>';
+    for (let di2 = 0; di2 < 7; di2++) {
+      const dayIdx = dayOrder[di2];
+      const count = lookup[dayIdx + '-' + hr] || 0;
+      const intensity = count / maxCount;
+      const bg = intensity === 0 ? '#F3F4F6' : 'rgba(13,61,32,' + (0.15 + intensity * 0.85).toFixed(2) + ')';
+      const textColor = intensity > 0.5 ? '#fff' : '#6B7280';
+      html += '<div class="heatmap-cell" style="background:' + bg + ';color:' + textColor + ';" title="' + dayNames[dayIdx] + ' at ' + hrLabel + ': ' + count + ' bookings">' + (count > 0 ? count : '') + '</div>';
+    }
+  }
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 function buildWeeklyRevenue(d) {
@@ -1227,30 +1454,30 @@ function renderRecommendations(d) {
   const recs = [];
   // Revenue-based
   if (d.totalRevenue < 20000) {
-    recs.push({ icon:'&#128176;', color:'#DCFCE7', title:'Boost revenue with a flash sale', desc:'Your monthly revenue is below target. Consider a limited-time 15% off 10-class packs to drive purchases this week.', priority:'High' });
+    recs.push({ icon:'&#128176;', color:'#DCFCE7', title:'Boost revenue with premium packages', desc:'Your monthly revenue is below target. Consider launching premium 1-on-1 training or exclusive workshops to increase average revenue per client.', priority:'High' });
   }
   // Fill rate based
   if (d.avgFillRate < 75) {
-    recs.push({ icon:'&#128200;', color:'#FEF3C7', title:'Fill empty class spots', desc:`Your average fill rate is ${d.avgFillRate}%. Try promoting under-filled classes on Instagram Stories 24h before, or offer last-minute booking discounts.`, priority:'High' });
+    recs.push({ icon:'&#128200;', color:'#FEF3C7', title:'Fill empty class spots', desc:`Your average fill rate is ${d.avgFillRate}%. Try promoting under-filled classes on Instagram Stories 24h before, or offer early-bird discounts for morning classes.`, priority:'High' });
   }
   // At-risk based
   if (d.atRiskCount > 5) {
-    recs.push({ icon:'&#9888;', color:'#FEE2E2', title:`Re-engage ${d.atRiskCount} at-risk clients`, desc:'These clients haven\'t visited in 14+ days. Send a personalised win-back email with a 10% discount code to bring them back.', priority:'Urgent' });
+    recs.push({ icon:'&#9888;', color:'#FEE2E2', title:`Re-engage ${d.atRiskCount} at-risk clients`, desc:'These clients haven\'t visited in 14+ days. Send a personalised win-back email with a complimentary class pass to bring them back into the studio.', priority:'Urgent' });
   }
   // New client based
   if (d.newThisMonth >= 10) {
-    recs.push({ icon:'&#127881;', color:'#DCFCE7', title:'Great acquisition momentum', desc:`You've added ${d.newThisMonth} new clients this month. Ensure your welcome automation is active and follow up with a personal WhatsApp after their first class.`, priority:'Tip' });
+    recs.push({ icon:'&#127881;', color:'#DCFCE7', title:'Great acquisition momentum', desc:`You've added ${d.newThisMonth} new clients this month. Ensure your welcome automation is active and follow up with a personal message after their first class.`, priority:'Tip' });
   }
   // Retention based
   if ((d.retentionRate||83) >= 80) {
-    recs.push({ icon:'&#128170;', color:'#DCFCE7', title:'Retention is a strength', desc:'Your retention rate is strong. Consider launching a referral program — happy members are your best marketing channel.', priority:'Growth' });
+    recs.push({ icon:'&#128170;', color:'#DCFCE7', title:'Retention is a strength', desc:'Your retention rate is strong. Consider launching a referral program — happy members are your best marketing channel. Offer class credits for referrals.', priority:'Growth' });
   } else {
-    recs.push({ icon:'&#128161;', color:'#FEF3C7', title:'Improve retention with check-ins', desc:'Retention is below 80%. Try adding a personal check-in message after a client\'s 5th class, and a "we miss you" email at 14 days absent.', priority:'High' });
+    recs.push({ icon:'&#128161;', color:'#FEF3C7', title:'Improve retention with check-ins', desc:'Retention is below 80%. Try adding a personal check-in message after a client\'s 5th class, and a "we miss you" offer at 14 days absent.', priority:'High' });
   }
-  // Upsell
-  recs.push({ icon:'&#127793;', color:'#EDE9FE', title:'Upsell class packs to memberships', desc:'Clients on their 2nd 10-class pack are prime membership candidates. Your automation handles this — make sure it\'s active in the Emails tab.', priority:'Ongoing' });
-  // Saturday slots
-  recs.push({ icon:'&#128197;', color:'#DBEAFE', title:'Saturday classes fill fast', desc:'Weekend classes consistently hit 90%+ capacity. Consider adding a 3rd Saturday slot to capture overflow demand and grow revenue.', priority:'Growth' });
+  // Instructor
+  recs.push({ icon:'&#127881;', color:'#F0FDF4', title:'Rotate popular instructors across time slots', desc:'Your top instructors have consistently high bookings. Consider scheduling them across multiple time slots to distribute demand and grow overall revenue.', priority:'Growth' });
+  // Weekend utilization
+  recs.push({ icon:'&#128197;', color:'#DBEAFE', title:'Saturday & Sunday fill rates are strong', desc:'Weekend classes consistently hit 85%+ capacity. Consider adding an extra afternoon slot or premium \"signature class\" to capture overflow demand.', priority:'Growth' });
 
   const priorityColors = { 'Urgent':'b-r','High':'b-a','Tip':'b-g','Growth':'b-b','Ongoing':'b-b' };
   $('an-recommendations').innerHTML = recs.map(r => `
