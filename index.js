@@ -84,6 +84,14 @@ app.use((req, res, next) => {
 });
 // Health check endpoint for Railway
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/api/mb-test', async (req, res) => {
+  try {
+    const token = await getMBToken();
+    res.json({ success: true, message: 'MindBody connected', siteId: CONFIG.siteId });
+  } catch (err) {
+    res.json({ success: false, error: err.message, siteId: CONFIG.siteId });
+  }
+});
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.use(express.static(__dirname));
@@ -103,15 +111,35 @@ async function fetchWithTimeout(url, options, ms=5000) {
 }
 async function getMBToken() {
   if (tokenCache.token && Date.now() < tokenCache.expires) return tokenCache.token;
+  console.log('[MB Auth] Attempting token issue for site:', CONFIG.siteId);
   const res = await fetchWithTimeout(`${MB_BASE}/usertoken/issue`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId },
+    headers: {
+      'Content-Type': 'application/json',
+      'API-Key': CONFIG.apiKey,
+      'SiteId': CONFIG.siteId,
+      'SourceName': CONFIG.sourceName,
+      'SourcePassword': CONFIG.sourcePassword,
+    },
     body: JSON.stringify({ Username: CONFIG.mbUsername, Password: CONFIG.mbPassword }),
-  }, 5000);
+  }, 8000);
   const data = await res.json();
-  if (!data.AccessToken) throw new Error('MB auth failed');
+  console.log('[MB Auth] Response:', JSON.stringify(data).substring(0, 200));
+  if (!data.AccessToken) throw new Error('MB auth failed: ' + (data.Error?.Message || data.Message || JSON.stringify(data)));
   tokenCache = { token: data.AccessToken, expires: Date.now() + 55 * 60 * 1000 };
+  console.log('[MB Auth] Token obtained successfully');
   return tokenCache.token;
+}
+// ─── MindBody headers helper ──────────────────────────────────────────────────
+function mbHeaders(token) {
+  return {
+    'Content-Type': 'application/json',
+    'API-Key': CONFIG.apiKey,
+    'SiteId': CONFIG.siteId,
+    'SourceName': CONFIG.sourceName,
+    'SourcePassword': CONFIG.sourcePassword,
+    'Authorization': token,
+  };
 }
 // ─── MindBody proxy ───────────────────────────────────────────────────────────
 app.all('/api/mb/*', requireAuth, async (req, res) => {
@@ -122,7 +150,7 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
     const url = `${MB_BASE}/${mbPath}${query ? '?' + query : ''}`;
     const mbRes = await fetchWithTimeout(url, {
       method: req.method,
-      headers: { 'Content-Type': 'application/json', 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': token },
+      headers: mbHeaders(token),
       body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body),
     }, 8000);
     const data = await mbRes.json();
@@ -366,7 +394,7 @@ async function handleAutomations(event) {
       if (!clientId || !itemName.includes('10')) return;
       const mbToken = await getMBToken();
       const salesRes = await fetch(`${MB_BASE}/sale/sales?clientId=${clientId}`, {
-        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+        headers: mbHeaders(mbToken)
       });
       const salesData = await salesRes.json();
       const sales = salesData.Sales || [];
@@ -375,7 +403,7 @@ async function handleAutomations(event) {
       ).length;
       if (tenPackCount === 2) {
         const clientRes = await fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
-          headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+          headers: mbHeaders(mbToken)
         });
         const clientData = await clientRes.json();
         const client = (clientData.Clients || [])[0];
@@ -443,7 +471,7 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
   try {
     const mbToken = await getMBToken();
     const clientsRes = await fetch(`${MB_BASE}/client/clients?Limit=200`, {
-      headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+      headers: mbHeaders(mbToken)
     });
     const clientsData = await clientsRes.json();
     let clients = clientsData.Clients || [];
@@ -488,13 +516,13 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
 
     const [clientsRes, classesRes, salesRes] = await Promise.all([
       fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, {
-        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+        headers: mbHeaders(mbToken)
       }, 5000),
       fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${thirtyDaysAgo}T00:00:00&EndDateTime=${today}T23:59:59&Limit=200`, {
-        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+        headers: mbHeaders(mbToken)
       }, 5000),
       fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${thirtyDaysAgo}T00:00:00&EndSaleDateTime=${today}T23:59:59`, {
-        headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+        headers: mbHeaders(mbToken)
       }, 5000),
     ]);
 
@@ -564,7 +592,7 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
     const ninetyDaysAgo = new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0];
 
     const clientsRes = await fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, {
-      headers: { 'API-Key': CONFIG.apiKey, 'SiteId': CONFIG.siteId, 'Authorization': mbToken }
+      headers: mbHeaders(mbToken)
     }, 5000);
     const clients = (await clientsRes.json()).Clients || [];
     const active = clients.filter(c => c.Active !== false);
