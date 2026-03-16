@@ -174,9 +174,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .item-bar{height:4px;border-radius:2px;background:#F3F4F6;margin-top:4px;}
 .item-bar-fill{height:100%;border-radius:2px;}
 /* Heatmap */
-.heatmap{display:grid;grid-template-columns:40px repeat(24,1fr);gap:2px;font-size:10px;}
-.heatmap-cell{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
+.heatmap{display:grid;grid-template-columns:44px repeat(7,1fr);gap:2px;font-size:10px;}
+.heatmap-cell{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:default;min-height:22px;}
 .heatmap-label{display:flex;align-items:center;font-size:10px;color:#6B7280;}
+.heatmap-header{text-align:center;font-size:10px;color:#6B7280;font-weight:500;padding:2px 0;}
 /* Master grid */
 .master-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;}
 .master-grid-2{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:14px;}
@@ -1485,9 +1486,25 @@ function getDefaultBlocks(trigger) {
     ],
     'birthday': [
       {type:'heading',content:'Happy birthday, [First name]!'},
-      {type:'text',content:"From everyone at Palm Sporting Club — wishing you a wonderful day. Here's a small birthday treat from us."},
-      {type:'discount',code:'BDAY5',desc:'5% off any class pack · Valid for 14 days'},
+      {type:'text',content:"From everyone at Palm Sporting Club — wishing you an incredible day filled with happiness and good vibes. To celebrate, we have a little birthday treat for you. Because what better gift than investing in yourself?"},
+      {type:'discount',code:'BDAY5',desc:'5% off any class pack · Valid 14 days'},
       {type:'button',label:'Treat yourself →',url:'https://www.palmsportingclub.com/prices'},
+    ],
+    'no_visit_21': [
+      {type:'heading',content:'We miss you, [First name]!'},
+      {type:'text',content:"It's been a little while since your last class at Palm Sporting Club. Your Megaformer is waiting — and your body will thank you for getting back on it."},
+      {type:'text',content:"Lagree results come from consistency, and just one class is enough to feel the difference again. Come back this week and we'll make it worth your while."},
+      {type:'discount',code:'COMEBACK10',desc:'10% off any class pack · Valid 14 days'},
+      {type:'button',label:'Come back to Palm →',url:'https://www.palmsportingclub.com/prices'},
+    ],
+    'first_visit': [
+      {type:'heading',content:'You just took your first step.'},
+      {type:'text',content:"What you felt on the Megaformer today wasn\u2019t just a workout. It was the beginning of something \u2014 slow, controlled, and deeply effective."},
+      {type:'text',content:"Here's what happens next:"},
+      {type:'list',items:['Weeks 1\u20132 \u00b7 The Awakening: Muscles you didn\'t know existed will make themselves known. That deep soreness? Your slow-twitch fibres are firing for the first time.','Weeks 3\u20134 \u00b7 The Shift: The shaking stops. Movements feel intentional. Your posture changes \u2014 shoulders back, core engaged, even off the machine.','Weeks 5\u20138 \u00b7 The Transformation: Longer, leaner lines. A stronger core. The sculpted definition that only comes from working muscles to true fatigue at slow tempo.']},
+      {type:'text',content:"Low-impact, high-intensity. Each 50-minute session engages every major muscle group through slow, controlled movements under constant tension \u2014 burning fat, building lean muscle, and improving flexibility all at once. No jumping, no jarring, no wasted movement."},
+      {type:'text',content:"2\u20133 sessions per week for the fastest results. Consistency is what separates good from extraordinary."},
+      {type:'button',label:'Book your next class \u2192',url:'https://www.palmsportingclub.com/prices'},
     ],
   };
   return defaults[trigger] || [{type:'heading',content:'Your email heading'},{type:'text',content:'Write your message here.'}];
@@ -1713,11 +1730,11 @@ function renderKitchen(d) {
   const cur = d.currency === 'EUR' ? '\u20AC' : '$';
   const fmt = (v) => v >= 1000 ? (v/1000).toFixed(1) + 'k' : (typeof v === 'number' ? v.toFixed(2) : v);
 
-  // Growth pill helper
+  // Growth pill helper — always shows what it compares against
   function gPill(val) {
     if (val === undefined || val === null) return '';
     const cls = val > 0 ? 'an-up' : val < 0 ? 'an-down' : 'an-flat';
-    return `<div class="an-pill ${cls}">${val > 0 ? '+' : ''}${val}%</div>`;
+    return `<div class="an-pill ${cls}" title="${val > 0 ? '+' : ''}${val}% ${compLabel}">${val > 0 ? '+' : ''}${val}% <span style="font-size:9px;opacity:0.8;">${compLabel}</span></div>`;
   }
 
   // ── Sales Summary (Square-style) ──────────────────────────────────────────
@@ -1850,6 +1867,7 @@ function renderKitCategories(d, cur) {
   var el = $('kit-categories');
   if (!el) return;
   var cats = d.categories || [];
+  var comp = d.compLabel || 'vs prior period';
   if (!cats.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No category data</div>'; return; }
   var totalRev = cats.reduce(function(a,c){ return a + c.revenue; }, 0) || 1;
 
@@ -1865,7 +1883,7 @@ function renderKitCategories(d, cur) {
         '<div style="flex:1;">' + item.name + '</div>' +
         '<div style="width:60px;text-align:right;">' + item.qty + ' sold</div>' +
         '<div style="width:80px;text-align:right;font-weight:500;">' + cur + item.revenue + '</div>' +
-        '<div style="width:60px;text-align:right;font-size:11px;' + iGCls + ';">' + iGSign + item.revGrowth + '%</div>' +
+        '<div style="width:70px;text-align:right;font-size:11px;' + iGCls + ';" title="' + iGSign + item.revGrowth + '% ' + comp + '">' + iGSign + item.revGrowth + '%</div>' +
       '</div>';
     }).join('');
 
@@ -1879,7 +1897,7 @@ function renderKitCategories(d, cur) {
         '<div style="display:flex;align-items:center;gap:12px;">' +
           '<div style="width:80px;height:6px;background:#F3F4F6;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#D97706;width:' + pct + '%;border-radius:3px;"></div></div>' +
           '<span style="font-weight:600;font-size:13px;width:80px;text-align:right;">' + cur + cat.revenue + '</span>' +
-          '<span style="font-size:11px;width:50px;text-align:right;' + gCls + ';">' + gSign + cat.revGrowth + '%</span>' +
+          '<span style="font-size:11px;width:60px;text-align:right;' + gCls + ';" title="' + gSign + cat.revGrowth + '% ' + comp + '">' + gSign + cat.revGrowth + '%</span>' +
         '</div>' +
       '</div>' +
       '<div class="cat-items" style="max-height:0;overflow:hidden;transition:max-height .3s ease;">' + itemsHtml + '</div>' +
@@ -1900,6 +1918,7 @@ function renderKitTopItems(d, cur) {
   var el = $('kit-top-items');
   if (!el) return;
   var items = d.topItems || [];
+  var comp = d.compLabel || 'vs prior period';
   if (!items.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No item data</div>'; return; }
   var maxRev = Math.max.apply(null, items.map(function(i){ return i.revenue; })) || 1;
 
@@ -1913,7 +1932,7 @@ function renderKitTopItems(d, cur) {
         '<div style="height:4px;background:#F3F4F6;border-radius:2px;margin-top:4px;"><div style="height:100%;background:#D97706;width:' + pct + '%;border-radius:2px;"></div></div></div>' +
       '<div style="width:50px;text-align:right;font-size:12px;color:#6B7280;">' + item.qty + '</div>' +
       '<div style="width:80px;text-align:right;font-size:13px;font-weight:600;">' + cur + item.revenue + '</div>' +
-      '<div style="width:50px;text-align:right;font-size:11px;' + gCls + ';">' + gSign + (item.revGrowth||0) + '%</div>' +
+      '<div style="width:60px;text-align:right;font-size:11px;' + gCls + ';" title="' + gSign + (item.revGrowth||0) + '% ' + comp + '">' + gSign + (item.revGrowth||0) + '%</div>' +
     '</div>';
   }).join('');
 }
@@ -1953,49 +1972,46 @@ function loadKitchenCustomRange() {
 
 // (renderKitYoY and renderKitItemAnalytics replaced by renderKitCategories and renderKitTopItems above)
 
-// ─── Order heatmap ───────────────────────────────────────────────────────────
+// ─── Order heatmap (Hours on Y-axis, Days on X-axis) ────────────────────────
 function renderKitHeatmap(d) {
   var el = $('kit-heatmap');
   if (!el) return;
   var heatmap = d.hourlyHeatmap;
   if (!heatmap || !heatmap.length) {
-    // Build from peak hours as fallback
     el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">Heatmap available with live data</div>';
     return;
   }
 
   var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Order: Mon-Sun
+  var dayOrder = [1,2,3,4,5,6,0];
   var maxCount = Math.max.apply(null, heatmap.map(function(h) { return h.count; }));
   if (maxCount <= 0) maxCount = 1;
 
-  // Build lookup
+  // Build lookup: key = "day-hour"
   var lookup = {};
   heatmap.forEach(function(h) { lookup[h.day + '-' + h.hour] = h.count; });
 
   var html = '<div class="heatmap">';
-  // Header row
+  // Header row: empty corner + day names
   html += '<div class="heatmap-label"></div>';
-  for (var h = 6; h <= 22; h++) html += '<div style="text-align:center;font-size:9px;color:#9CA3AF;">' + h + '</div>';
-  // Data rows
-  for (var day = 1; day <= 6; day++) {
-    var dIdx = day % 7;
-    html += '<div class="heatmap-label">' + dayNames[dIdx] + '</div>';
-    for (var hr = 6; hr <= 22; hr++) {
-      var count = lookup[dIdx + '-' + hr] || 0;
+  for (var di = 0; di < 7; di++) {
+    html += '<div class="heatmap-header">' + dayNames[dayOrder[di]] + '</div>';
+  }
+  // Each row = one hour (7am to 23pm covers restaurant hours)
+  for (var hr = 7; hr <= 23; hr++) {
+    var hrLabel = hr === 0 ? '12am' : hr < 12 ? hr + 'am' : hr === 12 ? '12pm' : (hr - 12) + 'pm';
+    html += '<div class="heatmap-label">' + hrLabel + '</div>';
+    for (var di2 = 0; di2 < 7; di2++) {
+      var dayIdx = dayOrder[di2];
+      var count = lookup[dayIdx + '-' + hr] || 0;
       var intensity = count / maxCount;
       var bg = intensity === 0 ? '#F3F4F6' : 'rgba(217,119,6,' + (0.15 + intensity * 0.85).toFixed(2) + ')';
       var textColor = intensity > 0.5 ? '#fff' : '#6B7280';
-      html += '<div class="heatmap-cell" style="background:' + bg + ';color:' + textColor + ';" title="' + dayNames[dIdx] + ' ' + hr + ':00 — ' + count + ' orders">' + (count > 0 ? count : '') + '</div>';
+      var pctOfMax = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+      var tip = dayNames[dayIdx] + ' at ' + hrLabel + ': ' + count + ' orders (' + pctOfMax + '% of peak)';
+      html += '<div class="heatmap-cell" style="background:' + bg + ';color:' + textColor + ';" title="' + tip + '">' + (count > 0 ? count : '') + '</div>';
     }
-  }
-  // Sunday
-  html += '<div class="heatmap-label">' + dayNames[0] + '</div>';
-  for (var hr2 = 6; hr2 <= 22; hr2++) {
-    var count2 = lookup['0-' + hr2] || 0;
-    var intensity2 = count2 / maxCount;
-    var bg2 = intensity2 === 0 ? '#F3F4F6' : 'rgba(217,119,6,' + (0.15 + intensity2 * 0.85).toFixed(2) + ')';
-    var tc2 = intensity2 > 0.5 ? '#fff' : '#6B7280';
-    html += '<div class="heatmap-cell" style="background:' + bg2 + ';color:' + tc2 + ';" title="Sun ' + hr2 + ':00 — ' + count2 + ' orders">' + (count2 > 0 ? count2 : '') + '</div>';
   }
   html += '</div>';
   el.innerHTML = html;
