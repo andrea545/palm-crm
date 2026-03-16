@@ -485,7 +485,7 @@ app.get('/api/events/log', requireAuth, (req, res) => {
 // ─── Health ───────────────────────────────────────────────────────────────────
 // ─── SendGrid Email Stats ─────────────────────────────────────────────────
 app.get('/api/email/stats', requireAuth, async (req, res) => {
-  if (\!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', stats: [] });
+  if (!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', stats: [] });
   try {
     const days = parseInt(req.query.days) || 30;
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -520,7 +520,7 @@ app.get('/api/email/stats', requireAuth, async (req, res) => {
       for (const day of catStats) {
         for (const m of (day.stats || [])) {
           const cat = m.name || 'unknown';
-          if (\!categories[cat]) categories[cat] = { sent: 0, delivered: 0, opens: 0, uniqueOpens: 0, clicks: 0, uniqueClicks: 0 };
+          if (!categories[cat]) categories[cat] = { sent: 0, delivered: 0, opens: 0, uniqueOpens: 0, clicks: 0, uniqueClicks: 0 };
           const s = m.metrics || {};
           categories[cat].sent += s.requests || 0;
           categories[cat].delivered += s.delivered || 0;
@@ -542,9 +542,7 @@ app.get('/api/email/stats', requireAuth, async (req, res) => {
     res.json({ error: err.message, totals: {}, categories: {} });
   }
 });
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', siteId: CONFIG.siteId, source: CONFIG.sourceName, sseClients: sseClients.size, eventsReceived: events.length, tokenCached: !!tokenCache.token });
-});
+// (health check is at line 86)
 // ─── Test email endpoint ──────────────────────────────────────────────────────
 app.post('/api/test-email', requireAuth, async (req, res) => {
   const { type, email, name } = req.body;
