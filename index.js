@@ -247,6 +247,67 @@ const EMAIL_TEMPLATES = {
       <p style="font-size:13px;color:#6B7280;text-align:center;">Any questions? WhatsApp us at <a href="https://wa.me/34687282994" style="color:#0D3D20;">+34 687 28 29 94</a></p>
     `)
   }),
+  winBack: (name) => ({
+    subject: `We miss you, ${name} — here's 10% off to come back`,
+    html: emailWrapper(`
+      <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;">We miss you, ${name}!</h2>
+      <p style="color:#374151;line-height:1.7;margin-bottom:16px;">It's been a little while since your last class at Palm Sporting Club. Your Megaformer is waiting — and your body will thank you for getting back on it.</p>
+      <p style="color:#374151;line-height:1.7;margin-bottom:20px;">Lagree results come from consistency, and just one class is enough to feel the difference again. Come back this week and we'll make it worth your while.</p>
+      <div style="background:#FEF3C7;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;border:1px solid #FDE68A;">
+        <div style="font-size:13px;color:#92400E;margin-bottom:6px;font-weight:500;">YOUR COMEBACK OFFER</div>
+        <div style="font-size:32px;font-weight:700;color:#92400E;letter-spacing:2px;">COMEBACK10</div>
+        <div style="font-size:13px;color:#92400E;margin-top:6px;">10% off any class pack · Valid 14 days</div>
+      </div>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Come back to Palm →</a>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Or book directly on the <a href="https://mndbdy.ly/e/5737970" style="color:#0D3D20;">Palm app</a>. We'd love to see you again.</p>
+    `)
+  }),
+  birthday: (name) => ({
+    subject: `Happy birthday, ${name}! A gift from Palm Sporting Club`,
+    html: emailWrapper(`
+      <div style="text-align:center;margin-bottom:20px;">
+        <span style="font-size:48px;">&#127874;</span>
+      </div>
+      <h2 style="font-size:20px;font-weight:600;color:#111827;margin-bottom:8px;text-align:center;">Happy Birthday, ${name}!</h2>
+      <p style="color:#374151;line-height:1.7;margin-bottom:16px;text-align:center;">From everyone at Palm Sporting Club — wishing you an incredible day filled with happiness and good vibes.</p>
+      <p style="color:#374151;line-height:1.7;margin-bottom:20px;text-align:center;">To celebrate, we have a little birthday treat for you. Because what better gift than investing in yourself?</p>
+      <div style="background:#EDE9FE;border-radius:12px;padding:20px;text-align:center;margin-bottom:20px;border:1px solid #DDD6FE;">
+        <div style="font-size:13px;color:#5B21B6;margin-bottom:6px;font-weight:500;">YOUR BIRTHDAY GIFT</div>
+        <div style="font-size:32px;font-weight:700;color:#5B21B6;letter-spacing:2px;">BDAY5</div>
+        <div style="font-size:13px;color:#5B21B6;margin-top:6px;">5% off any class pack · Valid 14 days</div>
+      </div>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Treat yourself →</a>
+      <p style="font-size:13px;color:#6B7280;text-align:center;">Enjoy your special day! &#127881;</p>
+    `)
+  }),
+  firstVisit: (name) => ({
+    subject: `You did it, ${name} — your Lagree journey starts now`,
+    html: emailWrapper(`
+      <h2 style="font-size:22px;font-weight:600;color:#111827;margin-bottom:12px;letter-spacing:-0.3px;">You just took your first step.</h2>
+      <p style="color:#374151;line-height:1.8;margin-bottom:20px;">What you felt on the Megaformer today wasn't just a workout. It was the beginning of something — slow, controlled, and deeply effective.</p>
+      <p style="color:#374151;line-height:1.8;margin-bottom:20px;">Here's what happens next:</p>
+      <div style="border-left:3px solid #0D3D20;padding-left:20px;margin-bottom:24px;">
+        <div style="margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#0D3D20;margin-bottom:4px;">Weeks 1–2 · The Awakening</div>
+          <p style="color:#4B5563;line-height:1.7;font-size:14px;margin:0;">Muscles you didn't know existed will make themselves known. That deep soreness? It means your slow-twitch fibres are firing for the first time.</p>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#0D3D20;margin-bottom:4px;">Weeks 3–4 · The Shift</div>
+          <p style="color:#4B5563;line-height:1.7;font-size:14px;margin:0;">The shaking stops. Movements feel intentional. You'll notice your posture changing — shoulders back, core engaged, even off the machine.</p>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#0D3D20;margin-bottom:4px;">Weeks 5–8 · The Transformation</div>
+          <p style="color:#4B5563;line-height:1.7;font-size:14px;margin:0;">Longer, leaner lines. A stronger core. The sculpted definition that only comes from working muscles to true fatigue at slow tempo.</p>
+        </div>
+      </div>
+      <div style="background:#F9FAFB;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #E5E7EB;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#111827;margin-bottom:8px;">Why it works</div>
+        <p style="color:#4B5563;line-height:1.7;font-size:14px;margin:0;">Low-impact, high-intensity. Each 50-minute session engages every major muscle group through slow, controlled movements under constant tension — burning fat, building lean muscle, and improving flexibility all at once. No jumping, no jarring, no wasted movement.</p>
+      </div>
+      <p style="color:#374151;line-height:1.8;margin-bottom:24px;">2–3 sessions per week for the fastest results. Consistency is what separates good from extraordinary.</p>
+      <a href="https://www.palmsportingclub.com/prices" style="display:block;background:#0D3D20;color:#fff;text-decoration:none;padding:14px;border-radius:10px;text-align:center;font-weight:600;font-size:15px;margin-bottom:12px;">Book your next class →</a>
+    `)
+  }),
 };
 // ─── Automation logic ─────────────────────────────────────────────────────────
 async function handleAutomations(event) {
