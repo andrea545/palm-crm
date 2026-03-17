@@ -1951,19 +1951,37 @@ async function loadEmailHistory() {
   emailHistoryOffset = 0;
   const search = ($('email-search') || {}).value || '';
   const category = ($('email-cat-filter') || {}).value || '';
-  // Load stats
   loadEmailStats();
-  // Load log
   try {
-    let url = `${PROXY}/api/email/log?limit=30&offset=0`;
+    let url = `${PROXY}/api/email/log?limit=50&offset=0`;
     if (category) url += `&category=${encodeURIComponent(category)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
-    const res = await fetch(url, { headers: { 'x-session-token': token } });
-    const data = await res.json();
-    if (data.emails && data.emails.length > 0) {
-      renderEmailLog(data.emails, false);
-      emailHistoryOffset = data.emails.length;
-      $('email-load-more').style.display = data.emails.length < data.total ? 'block' : 'none';
+    // Fetch both local log + SendGrid activity in parallel
+    const [logRes, actRes] = await Promise.all([
+      fetch(url, { headers: { 'x-session-token': token } }),
+      fetch(`${PROXY}/api/email/activity?limit=50`, { headers: { 'x-session-token': token } }).catch(() => ({ json: async () => ({ messages: [] }) })),
+    ]);
+    const logData = await logRes.json();
+    const actData = await actRes.json();
+    const localEmails = logData.emails || [];
+    const sgEmails = actData.messages || [];
+    // Deduplicate: skip SG emails that already exist in local log
+    const localKeys = new Set(localEmails.map(e => e.sgMessageId).filter(Boolean));
+    const localSubTo = new Set(localEmails.map(e => (e.subject||'') + '|' + (e.to||'')));
+    let uniqueSg = sgEmails.filter(e => {
+      if (e.sgMessageId && localKeys.has(e.sgMessageId)) return false;
+      if (localSubTo.has((e.subject||'') + '|' + (e.to||''))) return false;
+      return true;
+    });
+    if (search) uniqueSg = uniqueSg.filter(e => (e.to||'').toLowerCase().includes(search.toLowerCase()) || (e.subject||'').toLowerCase().includes(search.toLowerCase()));
+    if (category) uniqueSg = uniqueSg.filter(e => e.category === category);
+    // Mark SG-only emails so the UI knows they don't have a preview
+    uniqueSg = uniqueSg.map(e => ({ ...e, source: 'sendgrid' }));
+    const combined = [...localEmails, ...uniqueSg].sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
+    if (combined.length > 0) {
+      renderEmailLog(combined, false);
+      emailHistoryOffset = combined.length;
+      $('email-load-more').style.display = 'none';
     } else {
       $('email-list').innerHTML = `<div style="text-align:center;padding:40px 20px;">
         <div style="font-size:32px;margin-bottom:12px;">&#128236;</div>
@@ -2003,14 +2021,20 @@ function renderEmailLog(emails, append) {
     const bg = emailCatColors[cat] || '#F3F4F6';
     const icon = emailCatIcons[cat] || '&#9993;';
     const label = emailCatLabels[cat] || cat;
-    const badge = emailStatusBadge[e.status] || 'b-b';
+    const isSg = e.source === 'sendgrid';
+    const statusText = isSg ? (e.sgStatus || e.status || 'delivered') : (e.status || 'sent');
+    const badge = statusText === 'delivered' ? 'b-g' : (emailStatusBadge[statusText] || 'b-g');
     const d = new Date(e.sentAt);
     const timeStr = d.toLocaleDateString('en-GB', { day:'numeric', month:'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
-    const triggerLabel = e.trigger === 'manual' ? 'Manual send' : `Auto: ${e.trigger || cat}`;
-    return `<div class="ei" onclick="openEmailPreview('${e.id}')" style="cursor:pointer;transition:background 0.15s;" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background=''">
+    const triggerLabel = e.trigger === 'manual' ? 'Manual send' : (isSg ? `Auto: ${cat}` : `Auto: ${e.trigger || cat}`);
+    // Show opens/clicks for SendGrid entries
+    const engagementHtml = (e.opens || e.clicks) ? `<span style="color:#16A34A;font-size:11px;">&#128065; ${e.opens || 0}</span><span style="color:#2563EB;font-size:11px;">&#128279; ${e.clicks || 0}</span>` : '';
+    const clickHandler = isSg ? '' : `onclick="openEmailPreview('${e.id}')"`;
+    const cursorStyle = isSg ? 'cursor:default;' : 'cursor:pointer;';
+    return `<div class="ei" ${clickHandler} style="${cursorStyle}transition:background 0.15s;" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background=''">
       <div class="ei-ico" style="background:${bg};font-size:18px;">${icon}</div>
       <div style="flex:1;min-width:0;">
-        <div class="ei-sub">${e.subject} <span class="badge ${badge}" style="font-size:10px;">${e.status}</span></div>
+        <div class="ei-sub">${e.subject || '(no subject)'} <span class="badge ${badge}" style="font-size:10px;">${statusText}</span> ${engagementHtml}</div>
         <div class="ei-pre" style="display:flex;gap:6px;align-items:center;">
           <span style="font-weight:500;color:#374151;">To:</span> ${e.toName ? e.toName + ' · ' : ''}${e.to}
         </div>
@@ -2022,7 +2046,7 @@ function renderEmailLog(emails, append) {
           <span class="badge" style="font-size:10px;background:${bg};color:#374151;">${label}</span>
         </div>
       </div>
-      <div style="font-size:18px;color:#D1D5DB;">&#8250;</div>
+      ${isSg ? '' : '<div style="font-size:18px;color:#D1D5DB;">&#8250;</div>'}
     </div>`;
   }).join('');
   if (append) {
