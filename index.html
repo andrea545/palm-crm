@@ -1967,10 +1967,12 @@ async function loadEmailHistory() {
     const sgEmails = actData.messages || [];
     // Deduplicate: skip SG emails that already exist in local log
     const localKeys = new Set(localEmails.map(e => e.sgMessageId).filter(Boolean));
-    const localSubTo = new Set(localEmails.map(e => (e.subject||'') + '|' + (e.to||'')));
+    const localSubTo = new Set(localEmails.map(e => (e.subject||'') + '|' + (e.to||e.to_email||'')));
     let uniqueSg = sgEmails.filter(e => {
-      if (e.sgMessageId && localKeys.has(e.sgMessageId)) return false;
-      if (localSubTo.has((e.subject||'') + '|' + (e.to||''))) return false;
+      const sgId = e.sgMessageId || e.msg_id;
+      const sgTo = e.to || e.to_email || '';
+      if (sgId && localKeys.has(sgId)) return false;
+      if (localSubTo.has((e.subject||'') + '|' + sgTo)) return false;
       return true;
     });
     if (search) uniqueSg = uniqueSg.filter(e => (e.to||'').toLowerCase().includes(search.toLowerCase()) || (e.subject||'').toLowerCase().includes(search.toLowerCase()));
@@ -2017,18 +2019,25 @@ async function loadMoreEmails() {
 
 function renderEmailLog(emails, append) {
   const html = emails.map(e => {
-    const cat = e.category || 'automation';
+    // Normalize fields — handle both mapped (local log) and raw (SendGrid) formats
+    const eTo = e.to || e.to_email || '';
+    const eToName = e.toName || e.to_name || '';
+    const eSentAt = e.sentAt || e.last_event_time || e.processed_time || '';
+    const eOpens = e.opens || e.opens_count || 0;
+    const eClicks = e.clicks || e.clicks_count || 0;
+    const eCat = e.category || (e.categories && e.categories[0]) || 'automation';
+    const cat = eCat;
     const bg = emailCatColors[cat] || '#F3F4F6';
     const icon = emailCatIcons[cat] || '&#9993;';
     const label = emailCatLabels[cat] || cat;
-    const isSg = e.source === 'sendgrid';
+    const isSg = e.source === 'sendgrid' || (!e.sentAt && e.last_event_time);
     const statusText = isSg ? (e.sgStatus || e.status || 'delivered') : (e.status || 'sent');
     const badge = statusText === 'delivered' ? 'b-g' : (emailStatusBadge[statusText] || 'b-g');
-    const d = new Date(e.sentAt);
-    const timeStr = d.toLocaleDateString('en-GB', { day:'numeric', month:'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+    const d = new Date(eSentAt);
+    const timeStr = isNaN(d.getTime()) ? '' : (d.toLocaleDateString('en-GB', { day:'numeric', month:'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }));
     const triggerLabel = e.trigger === 'manual' ? 'Manual send' : (isSg ? `Auto: ${cat}` : `Auto: ${e.trigger || cat}`);
-    // Show opens/clicks for SendGrid entries
-    const engagementHtml = (e.opens || e.clicks) ? `<span style="color:#16A34A;font-size:11px;">&#128065; ${e.opens || 0}</span><span style="color:#2563EB;font-size:11px;">&#128279; ${e.clicks || 0}</span>` : '';
+    // Show opens/clicks
+    const engagementHtml = (eOpens || eClicks) ? `<span style="color:#16A34A;font-size:11px;">&#128065; ${eOpens}</span> <span style="color:#2563EB;font-size:11px;">&#128279; ${eClicks}</span>` : '';
     const clickHandler = isSg ? '' : `onclick="openEmailPreview('${e.id}')"`;
     const cursorStyle = isSg ? 'cursor:default;' : 'cursor:pointer;';
     return `<div class="ei" ${clickHandler} style="${cursorStyle}transition:background 0.15s;" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background=''">
@@ -2036,7 +2045,7 @@ function renderEmailLog(emails, append) {
       <div style="flex:1;min-width:0;">
         <div class="ei-sub">${e.subject || '(no subject)'} <span class="badge ${badge}" style="font-size:10px;">${statusText}</span> ${engagementHtml}</div>
         <div class="ei-pre" style="display:flex;gap:6px;align-items:center;">
-          <span style="font-weight:500;color:#374151;">To:</span> ${e.toName ? e.toName + ' · ' : ''}${e.to}
+          <span style="font-weight:500;color:#374151;">To:</span> ${eToName ? eToName + ' · ' : ''}${eTo}
         </div>
         <div class="ei-meta" style="display:flex;gap:12px;flex-wrap:wrap;">
           <span>${timeStr}</span>
