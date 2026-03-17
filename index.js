@@ -218,12 +218,31 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
     res.status(502).json({ error: err.message });
   }
 });
+// ─── Email Log (in-memory, persists until redeploy) ────────────────────────
+const emailLog = [];
+
 // ─── Email sending via SendGrid ───────────────────────────────────────────────
-async function sendEmail({ to, toName, subject, html, category }) {
+async function sendEmail({ to, toName, subject, html, category, trigger }) {
+  const logEntry = {
+    id: crypto.randomUUID(),
+    to, toName: toName || '',
+    subject,
+    category: category || 'automation',
+    trigger: trigger || category || 'manual',
+    sentAt: new Date().toISOString(),
+    status: 'pending',
+    sgMessageId: null,
+    htmlPreview: html || '',
+  };
+
   if (!CONFIG.sendgridKey) {
     console.log(`[email] No SendGrid key — would send to ${to}: ${subject}`);
-    return { ok: true, simulated: true };
+    logEntry.status = 'simulated';
+    emailLog.unshift(logEntry);
+    if (emailLog.length > 500) emailLog.pop();
+    return { ok: true, simulated: true, logId: logEntry.id };
   }
+
   const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}`, 'Content-Type': 'application/json' },
@@ -239,14 +258,98 @@ async function sendEmail({ to, toName, subject, html, category }) {
       categories: [category || 'automation'],
     }),
   });
+
   if (!res.ok) {
     const err = await res.text();
     console.error('[email] SendGrid error:', err);
-    return { ok: false, error: err };
+    logEntry.status = 'failed';
+    logEntry.error = err;
+    emailLog.unshift(logEntry);
+    if (emailLog.length > 500) emailLog.pop();
+    return { ok: false, error: err, logId: logEntry.id };
   }
-  console.log(`[email] Sent to ${to}: ${subject}`);
-  return { ok: true };
+
+  // Capture SendGrid message ID from response headers
+  const sgMsgId = res.headers.get('x-message-id');
+  logEntry.status = 'sent';
+  logEntry.sgMessageId = sgMsgId || null;
+  emailLog.unshift(logEntry);
+  if (emailLog.length > 500) emailLog.pop();
+
+  console.log(`[email] Sent to ${to}: ${subject} (msgId: ${sgMsgId || 'n/a'})`);
+  return { ok: true, logId: logEntry.id, sgMessageId: sgMsgId };
 }
+
+// ─── Email Log API ──────────────────────────────────────────────────────────
+app.get('/api/email/log', requireAuth, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const offset = parseInt(req.query.offset) || 0;
+  const category = req.query.category;
+  const search = (req.query.search || '').toLowerCase();
+  let filtered = emailLog;
+  if (category) filtered = filtered.filter(e => e.category === category);
+  if (search) filtered = filtered.filter(e =>
+    (e.to || '').toLowerCase().includes(search) ||
+    (e.toName || '').toLowerCase().includes(search) ||
+    (e.subject || '').toLowerCase().includes(search)
+  );
+  // Strip full HTML from list to save bandwidth — use /api/email/log/:id for full preview
+  const sliced = filtered.slice(offset, offset + limit).map(e => ({
+    ...e,
+    htmlPreview: undefined,
+  }));
+  res.json({
+    total: filtered.length,
+    offset,
+    limit,
+    emails: sliced,
+  });
+});
+
+// Get single email log entry with full HTML preview
+app.get('/api/email/log/:id', requireAuth, (req, res) => {
+  const entry = emailLog.find(e => e.id === req.params.id);
+  if (!entry) return res.status(404).json({ error: 'Not found' });
+  res.json(entry);
+});
+
+// SendGrid Activity — pull recent email activity (delivery, opens, clicks)
+app.get('/api/email/activity', requireAuth, async (req, res) => {
+  if (!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', messages: [] });
+  try {
+    const limit = req.query.limit || 50;
+    const query = req.query.query || '';
+    let url = `https://api.sendgrid.com/v3/messages?limit=${limit}`;
+    if (query) url += `&query=${encodeURIComponent(query)}`;
+    const sgRes = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}` },
+    });
+    const data = await sgRes.json();
+    res.json(data);
+  } catch (err) {
+    res.json({ error: err.message, messages: [] });
+  }
+});
+
+// Send/resend a specific template to a specific email
+app.post('/api/email/send', requireAuth, async (req, res) => {
+  const { to, toName, templateType } = req.body;
+  if (!to) return res.status(400).json({ error: 'Email address required' });
+  const templates = {
+    welcome: EMAIL_TEMPLATES.welcome,
+    introPackComplete: EMAIL_TEMPLATES.introPackComplete,
+    membershipUpsell: EMAIL_TEMPLATES.membershipUpsell,
+    lastCredit: EMAIL_TEMPLATES.lastCredit,
+    winBack: EMAIL_TEMPLATES.winBack,
+    birthday: EMAIL_TEMPLATES.birthday,
+    firstVisit: EMAIL_TEMPLATES.firstVisit,
+  };
+  const tplFn = templates[templateType];
+  if (!tplFn) return res.status(400).json({ error: `Unknown template: ${templateType}. Available: ${Object.keys(templates).join(', ')}` });
+  const tpl = tplFn(toName || 'there');
+  const result = await sendEmail({ to, toName, ...tpl, category: templateType, trigger: 'manual' });
+  res.json(result);
+});
 // ─── Email templates ─────────────────────────────────────────────────────────
 function emailWrapper(content) {
   return `<!DOCTYPE html><html><body style="font-family:Georgia,'Times New Roman',serif;background:#E8E5DC;margin:0;padding:30px 20px;">
@@ -415,7 +518,7 @@ async function handleAutomations(event) {
       const email = payload.email || payload.Email;
       if (email) {
         const tpl = EMAIL_TEMPLATES.welcome(name);
-        await sendEmail({ to: email, toName: name, ...tpl, category: 'welcome' });
+        await sendEmail({ to: email, toName: name, ...tpl, category: 'welcome', trigger: 'client.created' });
         console.log(`[automation] Welcome email sent to ${email}`);
       }
     }
@@ -446,12 +549,12 @@ async function handleAutomations(event) {
         const svcName = (svc.Name || '').toLowerCase();
         if (remaining === 0 && total <= 3 && svcName.includes('intro')) {
           const tpl = EMAIL_TEMPLATES.introPackComplete(name);
-          await sendEmail({ to: email, toName: name, ...tpl, category: 'intro_complete' });
+          await sendEmail({ to: email, toName: name, ...tpl, category: 'intro_complete', trigger: 'classRosterBooking.created' });
           console.log(`[automation] Intro pack complete email sent to ${email}`);
         }
         if (remaining === 0 && total > 3 && !svcName.includes('intro') && !svcName.includes('unlimited') && !svcName.includes('membership')) {
           const tpl = EMAIL_TEMPLATES.lastCredit(name);
-          await sendEmail({ to: email, toName: name, ...tpl, category: 'last_credit' });
+          await sendEmail({ to: email, toName: name, ...tpl, category: 'last_credit', trigger: 'classRosterBooking.created' });
           console.log(`[automation] Last credit email sent to ${email}`);
         }
       }
@@ -481,7 +584,7 @@ async function handleAutomations(event) {
         const client = (clientData.Clients || [])[0];
         if (client && client.Email) {
           const tpl = EMAIL_TEMPLATES.membershipUpsell(client.FirstName || 'there');
-          await sendEmail({ to: client.Email, toName: client.FirstName, ...tpl, category: 'membership_upsell' });
+          await sendEmail({ to: client.Email, toName: client.FirstName, ...tpl, category: 'membership_upsell', trigger: 'clientSale.created' });
           console.log(`[automation] Membership upsell email sent to ${client.Email}`);
         }
       }

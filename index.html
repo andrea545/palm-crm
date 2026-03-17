@@ -646,7 +646,80 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
       <!-- History tab -->
       <div id="etab-history" style="display:none;">
+        <!-- Stats summary -->
+        <div id="email-stats-bar" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;"></div>
+        <!-- Filters -->
+        <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap;">
+          <input id="email-search" placeholder="Search by name or email..." oninput="loadEmailHistory()" style="flex:1;min-width:160px;padding:7px 12px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;outline:none;">
+          <select id="email-cat-filter" onchange="loadEmailHistory()" style="padding:7px 10px;border:1px solid #D1D5DB;border-radius:8px;font-size:12px;background:#fff;">
+            <option value="">All types</option>
+            <option value="welcome">Welcome</option>
+            <option value="intro_complete">Intro complete</option>
+            <option value="last_credit">Last credit</option>
+            <option value="membership_upsell">Membership upsell</option>
+            <option value="winBack">Win-back</option>
+            <option value="birthday">Birthday</option>
+            <option value="firstVisit">First visit</option>
+            <option value="manual">Manual</option>
+          </select>
+          <button class="btn btn-g" onclick="openSendEmailModal()" style="font-size:12px;padding:6px 14px;">Send email</button>
+          <button class="btn" onclick="loadEmailHistory()" style="font-size:12px;padding:6px 14px;">Refresh</button>
+        </div>
+        <!-- Email log list -->
         <div id="email-list"></div>
+        <!-- Load more -->
+        <div id="email-load-more" style="text-align:center;padding:12px;display:none;">
+          <button class="btn" onclick="loadMoreEmails()" style="font-size:12px;">Load more</button>
+        </div>
+      </div>
+
+      <!-- Send Email Modal -->
+      <div id="send-email-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:none;justify-content:center;align-items:center;">
+        <div style="background:#fff;border-radius:14px;width:440px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,0.15);">
+          <div style="padding:18px 22px;border-bottom:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:15px;font-weight:600;color:#111827;">Send Email</div>
+            <button onclick="closeSendEmailModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6B7280;">&times;</button>
+          </div>
+          <div style="padding:18px 22px;">
+            <div class="fl"><label>Recipient email</label><input id="sem-email" placeholder="client@example.com" style="font-size:13px;"></div>
+            <div class="fl"><label>Recipient name</label><input id="sem-name" placeholder="Name (optional)" style="font-size:13px;"></div>
+            <div class="fl"><label>Email template</label>
+              <select id="sem-template" style="font-size:13px;">
+                <option value="welcome">Welcome to Palm Sporting Club</option>
+                <option value="firstVisit">You did it! What's next</option>
+                <option value="introPackComplete">Intro pack complete</option>
+                <option value="lastCredit">Last credit used — top up</option>
+                <option value="membershipUpsell">Membership upsell</option>
+                <option value="winBack">We miss you — 10% off</option>
+                <option value="birthday">Happy birthday</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+              <button class="btn btn-g" onclick="sendEmailFromModal()" id="sem-send-btn" style="font-size:13px;">Send now</button>
+              <button class="btn" onclick="closeSendEmailModal()" style="font-size:13px;">Cancel</button>
+              <div id="sem-status" style="font-size:12px;display:flex;align-items:center;margin-left:8px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Email Preview Modal -->
+      <div id="email-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;justify-content:center;align-items:center;">
+        <div style="background:#fff;border-radius:14px;width:620px;max-width:95vw;max-height:85vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.15);display:flex;flex-direction:column;">
+          <div style="padding:14px 20px;border-bottom:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:#111827;" id="epm-subject"></div>
+              <div style="font-size:12px;color:#6B7280;margin-top:2px;" id="epm-meta"></div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn" onclick="resendFromPreview()" id="epm-resend" style="font-size:11px;padding:4px 12px;">Resend</button>
+              <button onclick="closeEmailPreview()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6B7280;">&times;</button>
+            </div>
+          </div>
+          <div style="flex:1;overflow-y:auto;padding:0;">
+            <iframe id="epm-iframe" style="width:100%;height:500px;border:none;"></iframe>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1868,18 +1941,193 @@ async function sendManualEmail() {
 
 function loadEmails() { renderAutomationList(); }
 
-function loadEmailHistory() {
-  $('email-list').innerHTML = [
-    {bg:'#DCFCE7',sub:'We miss you at Palm Sporting Club!',pre:'Hi [Name], it\'s been a while since we\'ve seen you on the Megaformer...',meta:'To: lapsed (11) · Sent Mar 7 · Open 68%',bl:'Sent',bc:'b-g'},
-    {bg:'#FEF3C7',sub:'Your membership renews in 5 days',pre:'Your membership is coming up for renewal — renew now to keep your spot...',meta:'To: expiring (7) · Scheduled Mar 17 · 9am',bl:'Scheduled',bc:'b-a'},
-    {bg:'#DBEAFE',sub:'New class: Saturday 9:00 AM!',pre:'We\'re adding a new Saturday morning Lagree class — book your spot now...',meta:'To: all clients · Sent Feb 28 · Open 74%',bl:'Sent',bc:'b-g'},
-    {bg:'#F3F4F6',sub:'Welcome to Palm Sporting Club!',pre:'Welcome! We\'re thrilled to have you join our Lagree community in Marbella...',meta:'Auto-trigger: new client onboarding · Draft',bl:'Draft',bc:'b-b'},
-  ].map(e=>`<div class="ei"><div class="ei-ico" style="background:${e.bg};">&#9993;</div>
-    <div style="flex:1;min-width:0;">
-      <div class="ei-sub">${e.sub} <span class="badge ${e.bc}">${e.bl}</span></div>
-      <div class="ei-pre">${e.pre}</div>
-      <div class="ei-meta">${e.meta}</div>
-    </div></div>`).join('');
+let emailHistoryOffset = 0;
+const emailCatLabels = { welcome:'Welcome', intro_complete:'Intro complete', last_credit:'Last credit', membership_upsell:'Membership upsell', winBack:'Win-back', birthday:'Birthday', firstVisit:'First visit', manual:'Manual', automation:'Automation' };
+const emailCatColors = { welcome:'#DCFCE7', intro_complete:'#FEF3C7', last_credit:'#FEE2E2', membership_upsell:'#DBEAFE', winBack:'#FEF3C7', birthday:'#EDE9FE', firstVisit:'#F0FDF4', manual:'#F3F4F6' };
+const emailCatIcons = { welcome:'&#128075;', intro_complete:'&#11088;', last_credit:'&#9889;', membership_upsell:'&#128176;', winBack:'&#128148;', birthday:'&#127874;', firstVisit:'&#127942;', manual:'&#9993;' };
+const emailStatusBadge = { sent:'b-g', failed:'b-d', simulated:'b-a', pending:'b-b' };
+
+async function loadEmailHistory() {
+  emailHistoryOffset = 0;
+  const search = ($('email-search') || {}).value || '';
+  const category = ($('email-cat-filter') || {}).value || '';
+  // Load stats
+  loadEmailStats();
+  // Load log
+  try {
+    let url = `${PROXY}/api/email/log?limit=30&offset=0`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    const res = await fetch(url, { headers: { 'x-session-token': token } });
+    const data = await res.json();
+    if (data.emails && data.emails.length > 0) {
+      renderEmailLog(data.emails, false);
+      emailHistoryOffset = data.emails.length;
+      $('email-load-more').style.display = data.emails.length < data.total ? 'block' : 'none';
+    } else {
+      $('email-list').innerHTML = `<div style="text-align:center;padding:40px 20px;">
+        <div style="font-size:32px;margin-bottom:12px;">&#128236;</div>
+        <div style="font-size:14px;color:#6B7280;margin-bottom:6px;">No emails sent yet</div>
+        <div style="font-size:12px;color:#9CA3AF;">Emails will appear here when triggered by webhooks or sent manually</div>
+        <button class="btn btn-g" onclick="openSendEmailModal()" style="margin-top:14px;font-size:12px;">Send a test email</button>
+      </div>`;
+      $('email-load-more').style.display = 'none';
+    }
+  } catch(e) {
+    $('email-list').innerHTML = `<div style="text-align:center;padding:30px;color:#EF4444;font-size:13px;">Error loading email log: ${e.message}</div>`;
+  }
+}
+
+async function loadMoreEmails() {
+  const search = ($('email-search') || {}).value || '';
+  const category = ($('email-cat-filter') || {}).value || '';
+  try {
+    let url = `${PROXY}/api/email/log?limit=30&offset=${emailHistoryOffset}`;
+    if (category) url += `&category=${encodeURIComponent(category)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    const res = await fetch(url, { headers: { 'x-session-token': token } });
+    const data = await res.json();
+    if (data.emails && data.emails.length > 0) {
+      renderEmailLog(data.emails, true);
+      emailHistoryOffset += data.emails.length;
+      $('email-load-more').style.display = (emailHistoryOffset < data.total) ? 'block' : 'none';
+    } else {
+      $('email-load-more').style.display = 'none';
+    }
+  } catch(e) { console.error('Load more error:', e); }
+}
+
+function renderEmailLog(emails, append) {
+  const html = emails.map(e => {
+    const cat = e.category || 'automation';
+    const bg = emailCatColors[cat] || '#F3F4F6';
+    const icon = emailCatIcons[cat] || '&#9993;';
+    const label = emailCatLabels[cat] || cat;
+    const badge = emailStatusBadge[e.status] || 'b-b';
+    const d = new Date(e.sentAt);
+    const timeStr = d.toLocaleDateString('en-GB', { day:'numeric', month:'short' }) + ' · ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+    const triggerLabel = e.trigger === 'manual' ? 'Manual send' : `Auto: ${e.trigger || cat}`;
+    return `<div class="ei" onclick="openEmailPreview('${e.id}')" style="cursor:pointer;transition:background 0.15s;" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background=''">
+      <div class="ei-ico" style="background:${bg};font-size:18px;">${icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="ei-sub">${e.subject} <span class="badge ${badge}" style="font-size:10px;">${e.status}</span></div>
+        <div class="ei-pre" style="display:flex;gap:6px;align-items:center;">
+          <span style="font-weight:500;color:#374151;">To:</span> ${e.toName ? e.toName + ' · ' : ''}${e.to}
+        </div>
+        <div class="ei-meta" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <span>${timeStr}</span>
+          <span style="color:#9CA3AF;">·</span>
+          <span>${triggerLabel}</span>
+          <span style="color:#9CA3AF;">·</span>
+          <span class="badge" style="font-size:10px;background:${bg};color:#374151;">${label}</span>
+        </div>
+      </div>
+      <div style="font-size:18px;color:#D1D5DB;">&#8250;</div>
+    </div>`;
+  }).join('');
+  if (append) {
+    $('email-list').innerHTML += html;
+  } else {
+    $('email-list').innerHTML = html;
+  }
+}
+
+async function loadEmailStats() {
+  try {
+    const res = await fetch(`${PROXY}/api/email/stats?days=30`, { headers: { 'x-session-token': token } });
+    const data = await res.json();
+    const t = data.totals || {};
+    $('email-stats-bar').innerHTML = [
+      { label:'Sent (30d)', value: t.sent || 0, color:'#0D3D20' },
+      { label:'Delivered', value: t.delivered || 0, color:'#16A34A' },
+      { label:'Open rate', value: (t.openRate || 0) + '%', color:'#2563EB' },
+      { label:'Click rate', value: (t.clickRate || 0) + '%', color:'#D97706' },
+    ].map(s => `<div style="background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:14px 16px;">
+      <div style="font-size:11px;color:#6B7280;text-transform:uppercase;letter-spacing:0.5px;">${s.label}</div>
+      <div style="font-size:22px;font-weight:700;color:${s.color};margin-top:4px;">${s.value}</div>
+    </div>`).join('');
+  } catch(e) {
+    $('email-stats-bar').innerHTML = '';
+  }
+}
+
+// Send email modal
+function openSendEmailModal() {
+  const m = $('send-email-modal');
+  m.style.display = 'flex';
+  $('sem-email').value = '';
+  $('sem-name').value = '';
+  $('sem-status').innerHTML = '';
+}
+function closeSendEmailModal() {
+  $('send-email-modal').style.display = 'none';
+}
+async function sendEmailFromModal() {
+  const email = $('sem-email').value.trim();
+  const name = $('sem-name').value.trim();
+  const tpl = $('sem-template').value;
+  if (!email) { $('sem-status').innerHTML = '<span style="color:#EF4444;">Enter an email address</span>'; return; }
+  $('sem-send-btn').disabled = true;
+  $('sem-status').innerHTML = '<span style="color:#6B7280;">Sending...</span>';
+  try {
+    const res = await fetch(`${PROXY}/api/email/send`, {
+      method: 'POST',
+      headers: { 'x-session-token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: email, toName: name || 'there', templateType: tpl }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      $('sem-status').innerHTML = '<span style="color:#16A34A;">&#10003; Sent successfully!</span>';
+      setTimeout(() => { closeSendEmailModal(); loadEmailHistory(); }, 1500);
+    } else {
+      $('sem-status').innerHTML = `<span style="color:#EF4444;">Failed: ${data.error || 'Unknown error'}</span>`;
+    }
+  } catch(e) {
+    $('sem-status').innerHTML = `<span style="color:#EF4444;">${e.message}</span>`;
+  }
+  $('sem-send-btn').disabled = false;
+}
+
+// Email preview modal
+let currentPreviewEmail = null;
+async function openEmailPreview(id) {
+  try {
+    const res = await fetch(`${PROXY}/api/email/log/${id}`, { headers: { 'x-session-token': token } });
+    const data = await res.json();
+    if (data.error) return;
+    currentPreviewEmail = data;
+    $('epm-subject').textContent = data.subject;
+    const d = new Date(data.sentAt);
+    $('epm-meta').textContent = `To: ${data.toName ? data.toName + ' · ' : ''}${data.to} · ${d.toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'})} at ${d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})} · Status: ${data.status}`;
+    // Load HTML into iframe
+    const iframe = $('epm-iframe');
+    iframe.srcdoc = data.htmlPreview || '<p style="padding:20px;color:#6B7280;">No preview available</p>';
+    $('email-preview-modal').style.display = 'flex';
+  } catch(e) { console.error('Preview error:', e); }
+}
+function closeEmailPreview() {
+  $('email-preview-modal').style.display = 'none';
+  currentPreviewEmail = null;
+}
+async function resendFromPreview() {
+  if (!currentPreviewEmail) return;
+  const e = currentPreviewEmail;
+  $('epm-resend').textContent = 'Sending...';
+  $('epm-resend').disabled = true;
+  try {
+    const res = await fetch(`${PROXY}/api/email/send`, {
+      method: 'POST',
+      headers: { 'x-session-token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: e.to, toName: e.toName || 'there', templateType: e.category }),
+    });
+    const data = await res.json();
+    $('epm-resend').textContent = data.ok ? 'Resent!' : 'Failed';
+    setTimeout(() => { $('epm-resend').textContent = 'Resend'; $('epm-resend').disabled = false; }, 2000);
+    if (data.ok) loadEmailHistory();
+  } catch(err) {
+    $('epm-resend').textContent = 'Error';
+    setTimeout(() => { $('epm-resend').textContent = 'Resend'; $('epm-resend').disabled = false; }, 2000);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
