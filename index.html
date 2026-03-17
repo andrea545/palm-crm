@@ -3154,29 +3154,42 @@ function renderMasterTrend(studio, kitchen, cur) {
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
-const loaded = {};
+let currentPage = 'master';
 function nav(page, el) {
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
   el.classList.add('active');
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   $('page-'+page).classList.add('on');
   $('page-title').textContent = {master:'Palm Sporting Club',dash:'Lagree Studio',analytics:'Studio Analytics',kitchen:'Palm Kitchen',schedule:'Weekly schedule',clients:'Clients',attendance:'Attendance',webhooks:'Live events',emails:'Emails'}[page]||page;
-  if (!loaded[page]) {
-    loaded[page] = true;
-    if (page==='master') loadMaster();
-    if (page==='dash') loadDash();
-    if (page==='analytics') loadAnalytics();
-    if (page==='kitchen') loadKitchen();
-    if (page==='schedule') loadSchedule();
-    if (page==='clients') loadClients();
-    if (page==='attendance') loadAttendance();
-    if (page==='webhooks') setupWebhooksPage();
-    if (page==='emails') loadEmails();
-  }
+  currentPage = page;
+  loadPage(page);
+}
+function loadPage(page) {
+  if (page==='master') loadMaster();
+  if (page==='dash') loadDash();
+  if (page==='analytics') loadAnalytics();
+  if (page==='kitchen') loadKitchen();
+  if (page==='schedule') loadSchedule();
+  if (page==='clients') loadClients();
+  if (page==='attendance') loadAttendance();
+  if (page==='webhooks') setupWebhooksPage();
+  if (page==='emails') loadEmails();
 }
 // ─── Boot ─────────────────────────────────────────────────────────────────────
-loadMaster();
-connectSSE();
+// Validate session on page load — redirect to login if expired
+(async function boot() {
+  try {
+    const r = await fetch(PROXY + '/api/health', { headers: { 'x-session-token': token } });
+    if (r.status === 401 || !r.ok) throw new Error('Session expired');
+    loadMaster();
+    connectSSE();
+  } catch(e) {
+    console.log('[boot] Session invalid, redirecting to login');
+    localStorage.removeItem('palm_crm_token');
+    localStorage.removeItem('palm_crm_user');
+    window.location.href = '/login';
+  }
+})();
 </script>
 </body>
 </html>

@@ -84,7 +84,15 @@ app.use((req, res, next) => {
   next();
 });
 // Health check endpoint for Railway
-app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/api/health', (req, res) => {
+  const sessionToken = req.headers['x-session-token'];
+  const session = getSession(sessionToken);
+  const sseCount = (global.sseClients || []).length;
+  if (sessionToken && !session) {
+    return res.status(401).json({ status: 'unauthorized', message: 'Session expired' });
+  }
+  res.json({ status: 'ok', uptime: process.uptime(), authenticated: !!session, siteId: CONFIG.siteId, sseClients: sseCount });
+});
 app.get('/api/mb-test', async (req, res) => {
   try {
     const token = await getMBToken();
@@ -911,20 +919,16 @@ app.get('/api/email-queue', requireAuth, async (req, res) => {
       return (bd.getMonth() + 1) === todayMonth && bd.getDate() === todayDay;
     });
 
-    // --- Smart dedup: check entire email log, not just today ---
+    // --- Smart dedup: check entire email log (any attempt, not just successful) ---
     // Win-back: don't resend within 30 days
     const winbackCooloff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const sentWinback = emailLog
-      .filter(e => e.category === 'winback' && e.status === 'sent' && e.sentAt > winbackCooloff)
+      .filter(e => e.category === 'winback' && e.sentAt > winbackCooloff)
       .map(e => e.to);
     // Birthday: don't resend same year
     const thisYear = now.getFullYear().toString();
     const sentBirthday = emailLog
-      .filter(e => e.category === 'birthday' && e.status === 'sent' && e.sentAt && e.sentAt.startsWith(thisYear))
-      .map(e => e.to);
-    // Welcome: track for reference
-    const sentWelcome = emailLog
-      .filter(e => e.category === 'welcome' && e.status === 'sent')
+      .filter(e => e.category === 'birthday' && e.sentAt && e.sentAt.startsWith(thisYear))
       .map(e => e.to);
 
     const pendingWinback = lapsed.filter(c => !sentWinback.includes(c.Email));
@@ -981,7 +985,7 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
 
     if (type === 'winback') {
       const alreadySent = emailLog
-        .filter(e => e.category === 'winback' && e.status === 'sent' && e.sentAt > winbackCooloff)
+        .filter(e => e.category === 'winback' && e.sentAt > winbackCooloff)
         .map(e => e.to);
       const cutoff = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
       targets = clients.filter(c => {
@@ -992,7 +996,7 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
       category = 'winback';
     } else if (type === 'birthday') {
       const alreadySent = emailLog
-        .filter(e => e.category === 'birthday' && e.status === 'sent' && e.sentAt && e.sentAt.startsWith(thisYear))
+        .filter(e => e.category === 'birthday' && e.sentAt && e.sentAt.startsWith(thisYear))
         .map(e => e.to);
       const todayMonth = now.getMonth() + 1;
       const todayDay = now.getDate();
