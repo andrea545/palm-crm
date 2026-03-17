@@ -267,7 +267,10 @@ async function sendEmail({ to, toName, subject, html, category, trigger }) {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: to, name: toName }] }],
+      personalizations: [{
+        to: [{ email: to, name: toName }],
+        ...(to !== 'hello@palmsportingclub.com' ? { bcc: [{ email: 'hello@palmsportingclub.com' }] } : {}),
+      }],
       from: { email: CONFIG.fromEmail, name: CONFIG.fromName },
       subject,
       content: [{ type: 'text/html', value: html }],
