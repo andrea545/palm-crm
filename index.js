@@ -267,10 +267,7 @@ async function sendEmail({ to, toName, subject, html, category, trigger }) {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      personalizations: [{
-        to: [{ email: to, name: toName }],
-        ...(to !== 'hello@palmsportingclub.com' ? { bcc: [{ email: 'hello@palmsportingclub.com' }] } : {}),
-      }],
+      personalizations: [{ to: [{ email: to, name: toName }] }],
       from: { email: CONFIG.fromEmail, name: CONFIG.fromName },
       subject,
       content: [{ type: 'text/html', value: html }],
@@ -572,9 +569,15 @@ async function handleAutomations(event) {
       const name = payload.firstName || payload.FirstName || payload.clientFirstName || 'there';
       const email = payload.email || payload.Email || payload.clientEmail;
       if (email) {
-        const tpl = EMAIL_TEMPLATES.welcome(name.trim());
-        await sendEmail({ to: email, toName: name.trim(), ...tpl, category: 'welcome', trigger: 'client.created' });
-        console.log(`[automation] Welcome email sent to ${email}`);
+        // Check if we already sent a welcome email to this address
+        const alreadySent = emailLog.some(e => e.to === email && e.category === 'welcome' && e.status === 'sent');
+        if (alreadySent) {
+          console.log(`[automation] Welcome email already sent to ${email} — skipped`);
+        } else {
+          const tpl = EMAIL_TEMPLATES.welcome(name.trim());
+          await sendEmail({ to: email, toName: name.trim(), ...tpl, category: 'welcome', trigger: 'client.created' });
+          console.log(`[automation] Welcome email sent to ${email}`);
+        }
       } else {
         console.log(`[automation] No email found for client.created — skipped`);
       }
@@ -908,11 +911,21 @@ app.get('/api/email-queue', requireAuth, async (req, res) => {
       return (bd.getMonth() + 1) === todayMonth && bd.getDate() === todayDay;
     });
 
-    // --- Check which emails have already been sent today (avoid duplicates) ---
-    const todayStr = now.toISOString().split('T')[0];
-    const sentToday = emailLog.filter(e => e.sentAt && e.sentAt.startsWith(todayStr));
-    const sentWinback = sentToday.filter(e => e.category === 'winback').map(e => e.to);
-    const sentBirthday = sentToday.filter(e => e.category === 'birthday').map(e => e.to);
+    // --- Smart dedup: check entire email log, not just today ---
+    // Win-back: don't resend within 30 days
+    const winbackCooloff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const sentWinback = emailLog
+      .filter(e => e.category === 'winback' && e.status === 'sent' && e.sentAt > winbackCooloff)
+      .map(e => e.to);
+    // Birthday: don't resend same year
+    const thisYear = now.getFullYear().toString();
+    const sentBirthday = emailLog
+      .filter(e => e.category === 'birthday' && e.status === 'sent' && e.sentAt && e.sentAt.startsWith(thisYear))
+      .map(e => e.to);
+    // Welcome: track for reference
+    const sentWelcome = emailLog
+      .filter(e => e.category === 'welcome' && e.status === 'sent')
+      .map(e => e.to);
 
     const pendingWinback = lapsed.filter(c => !sentWinback.includes(c.Email));
     const pendingBirthday = birthdayClients.filter(c => !sentBirthday.includes(c.Email));
@@ -958,28 +971,35 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
     const clientsData = await clientsRes.json();
     const clients = (clientsData.Clients || []).filter(c => c.Email);
 
-    const todayStr = now.toISOString().split('T')[0];
-    const sentToday = emailLog.filter(e => e.sentAt && e.sentAt.startsWith(todayStr) && e.category === type).map(e => e.to);
+    // Smart dedup: check full log with cooldown periods
+    const winbackCooloff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const thisYear = now.getFullYear().toString();
 
     let targets = [];
     let templateFn;
     let category;
 
     if (type === 'winback') {
+      const alreadySent = emailLog
+        .filter(e => e.category === 'winback' && e.status === 'sent' && e.sentAt > winbackCooloff)
+        .map(e => e.to);
       const cutoff = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
       targets = clients.filter(c => {
         const lastVisit = c.LastModifiedDateTime || c.CreationDate;
-        return lastVisit && new Date(lastVisit) < cutoff && c.Active !== false && !sentToday.includes(c.Email);
+        return lastVisit && new Date(lastVisit) < cutoff && c.Active !== false && !alreadySent.includes(c.Email);
       });
       templateFn = EMAIL_TEMPLATES.winBack;
       category = 'winback';
     } else if (type === 'birthday') {
+      const alreadySent = emailLog
+        .filter(e => e.category === 'birthday' && e.status === 'sent' && e.sentAt && e.sentAt.startsWith(thisYear))
+        .map(e => e.to);
       const todayMonth = now.getMonth() + 1;
       const todayDay = now.getDate();
       targets = clients.filter(c => {
         if (!c.BirthDate) return false;
         const bd = new Date(c.BirthDate);
-        return (bd.getMonth() + 1) === todayMonth && bd.getDate() === todayDay && !sentToday.includes(c.Email);
+        return (bd.getMonth() + 1) === todayMonth && bd.getDate() === todayDay && !alreadySent.includes(c.Email);
       });
       templateFn = EMAIL_TEMPLATES.birthday;
       category = 'birthday';
@@ -992,18 +1012,12 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
     let sent = 0;
     for (const client of targets.slice(0, 50)) {
       const name = client.FirstName || 'there';
-      let subject, html;
-
-      if (customSubject || customBody) {
-        // Use custom content, replace [Name] with client name
-        subject = (customSubject || templateFn(name).subject).replace(/\[Name\]/g, name.trim());
-        const bodyText = (customBody || '').replace(/\[Name\]/g, name.trim());
-        html = emailWrapper(`<p style="color:#374151;line-height:1.8;font-size:15px;">${bodyText.replace(/\n/g, '<br>')}</p>`);
-      } else {
-        const tpl = templateFn(name.trim());
-        subject = tpl.subject;
-        html = tpl.html;
-      }
+      // Always use the proper HTML template — only override subject if customized
+      const tpl = templateFn(name.trim());
+      const subject = customSubject
+        ? customSubject.replace(/\[Name\]/g, name.trim())
+        : tpl.subject;
+      const html = tpl.html;
 
       const result = await sendEmail({
         to: client.Email,
