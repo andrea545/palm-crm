@@ -1959,7 +1959,7 @@ async function loadEmailHistory() {
     // Fetch both local log + SendGrid activity in parallel
     const [logRes, actRes] = await Promise.all([
       fetch(url, { headers: { 'x-session-token': token } }),
-      fetch(`${PROXY}/api/email/activity?limit=50`, { headers: { 'x-session-token': token } }).catch(() => ({ json: async () => ({ messages: [] }) })),
+      fetch(`${PROXY}/api/email/activity?limit=200`, { headers: { 'x-session-token': token } }).catch(() => ({ json: async () => ({ messages: [] }) })),
     ]);
     const logData = await logRes.json();
     const actData = await actRes.json();

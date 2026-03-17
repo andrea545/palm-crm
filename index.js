@@ -339,19 +339,24 @@ app.get('/api/email/log/:id', requireAuth, (req, res) => {
 app.get('/api/email/activity', requireAuth, async (req, res) => {
   if (!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', messages: [] });
   try {
-    const limit = req.query.limit || 50;
-    const query = req.query.query || `from_email="${CONFIG.fromEmail}"`;
+    const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+    // Build date range: default last 30 days
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const startDate = thirtyDaysAgo.toISOString().split('.')[0] + 'Z';
+    const endDate = now.toISOString().split('.')[0] + 'Z';
+    const query = req.query.query || `from_email="${CONFIG.fromEmail}" AND last_event_time BETWEEN TIMESTAMP "${startDate}" AND TIMESTAMP "${endDate}"`;
     let url = `https://api.sendgrid.com/v3/messages?limit=${limit}&query=${encodeURIComponent(query)}`;
+    console.log('[email-activity] Fetching SG activity:', url);
     const sgRes = await fetch(url, {
       headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}` },
     });
     const data = await sgRes.json();
-    // Log first message to see actual field names from SendGrid
+    console.log('[email-activity] SG returned', (data.messages || []).length, 'messages');
     if (data.messages && data.messages.length > 0) {
       console.log('[email-activity] Sample SG message keys:', Object.keys(data.messages[0]).join(', '));
-      console.log('[email-activity] Sample SG message:', JSON.stringify(data.messages[0]).substring(0, 500));
     }
-    // Convert SendGrid messages to our log format — handle various SG field names
+    // Convert SendGrid messages to our log format
     const messages = (data.messages || []).map(m => ({
       id: m.msg_id || m.message_id || crypto.randomUUID(),
       to: m.to_email || m.to || m.recipient || '',
@@ -366,8 +371,9 @@ app.get('/api/email/activity', requireAuth, async (req, res) => {
       opens: m.opens_count || 0,
       clicks: m.clicks_count || 0,
     }));
-    res.json({ messages, total: messages.length, raw_sample: data.messages ? data.messages[0] : null });
+    res.json({ messages, total: messages.length });
   } catch (err) {
+    console.error('[email-activity] Error:', err.message);
     res.json({ error: err.message, messages: [] });
   }
 });
