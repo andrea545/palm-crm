@@ -726,6 +726,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 </div>
 
+<!-- Queue Email Preview/Edit Modal -->
+<div id="queue-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;justify-content:center;align-items:center;">
+  <div style="background:#fff;border-radius:14px;width:680px;max-width:95vw;max-height:90vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.15);display:flex;flex-direction:column;">
+    <div style="padding:16px 22px;border-bottom:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div>
+        <div style="font-size:15px;font-weight:600;color:#111827;" id="qpm-title">Preview Email</div>
+        <div style="font-size:12px;color:#6B7280;margin-top:2px;" id="qpm-meta"></div>
+      </div>
+      <button onclick="closeQueuePreview()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6B7280;">&times;</button>
+    </div>
+    <div style="padding:16px 22px;border-bottom:1px solid #E5E7EB;flex-shrink:0;">
+      <div style="display:flex;gap:12px;margin-bottom:10px;">
+        <div style="flex:1;"><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:4px;">SUBJECT</label><input id="qpm-subject" style="width:100%;padding:7px 10px;border:1px solid #D1D5DB;border-radius:6px;font-size:13px;"></div>
+      </div>
+      <div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:4px;">RECIPIENTS (<span id="qpm-count">0</span> clients)</label>
+        <div id="qpm-recipients" style="max-height:80px;overflow-y:auto;font-size:12px;color:#374151;background:#F9FAFB;border-radius:6px;padding:6px 10px;border:1px solid #E5E7EB;"></div>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:0;">
+      <div style="padding:8px 22px 4px;"><label style="font-size:11px;font-weight:600;color:#6B7280;">EMAIL BODY (edit below)</label></div>
+      <div id="qpm-body-wrap" style="padding:0 22px;">
+        <textarea id="qpm-body" style="width:100%;min-height:250px;padding:12px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid #E5E7EB;display:flex;gap:8px;align-items:center;flex-shrink:0;">
+      <button class="btn btn-g" onclick="confirmSendQueue()" id="qpm-send-btn" style="font-size:13px;">Send to all</button>
+      <button class="btn" onclick="closeQueuePreview()" style="font-size:13px;">Cancel</button>
+      <div id="qpm-status" style="font-size:12px;margin-left:8px;color:#6B7280;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Email editor overlay -->
 <div class="editor-overlay" id="email-editor-overlay">
   <div class="editor-panel">
@@ -956,20 +988,24 @@ async function loadDash() {
   await checkHealth();
   try {
     const [cls, cts] = await Promise.all([
-      api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${tod()}T23:59:59&Limit=10`),
+      api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${tod()}T23:59:59&Limit=30`),
       api('client/clients', '?Limit=50'),
     ]);
     ld('dash', false);
-    ok('dash', `Connected via proxy · MindBody sandbox · ${cts.TotalResults||0} clients · ${(cls.Classes||[]).length} classes today`);
+    const P = cts.Clients || [];
+    const totalClients = cts.TotalResults || cts.PagingResponse?.TotalResults || P.length;
+    ok('dash', `Connected via proxy · MindBody sandbox · ${totalClients} clients · ${(cls.Classes||[]).length} classes today`);
     bd('dash');
     const C = (cls.Classes || []).sort((a,b) => new Date(a.StartDateTime) - new Date(b.StartDateTime));
-    const P = cts.Clients || [];
-    const totalClients = cts.TotalResults || P.length;
     allClients = P;
     renderDashStats(C, P, totalClients);
     renderTodayClasses(C);
-    // Sort recent clients by creation date (newest first)
-    const recentP = [...P].sort((a,b) => new Date(b.CreationDate||0) - new Date(a.CreationDate||0));
+    // Sort recent clients by most recent activity (newest first)
+    const recentP = [...P].sort((a,b) => {
+      const dateA = a.CreationDate || a.LastModifiedDateTime || a.FirstClassDate || '2000-01-01';
+      const dateB = b.CreationDate || b.LastModifiedDateTime || b.FirstClassDate || '2000-01-01';
+      return new Date(dateB) - new Date(dateA);
+    });
     renderRecentClients(recentP);
     renderEmailQueue();
   } catch(e) {
@@ -1042,24 +1078,76 @@ async function renderEmailQueue() {
   }
 }
 
+let queuePreviewType = null;
+let queuePreviewClients = [];
+
 async function sendQueueEmails(type) {
-  const labels = { winback: 'win-back', birthday: 'birthday', membershipRenewal: 'membership renewal' };
-  if (!confirm('Send ' + labels[type] + ' emails to all pending clients?')) return;
+  const labels = { winback: 'Win-back', birthday: 'Birthday', membershipRenewal: 'Membership renewal' };
+  queuePreviewType = type;
+  // Fetch preview + queue data in parallel
   try {
-    const res = await fetch(PROXY + '/api/email-queue/send', {
+    const [previewRes, queueRes] = await Promise.all([
+      fetch(PROXY + '/api/email-queue/preview?type=' + type, { headers: { 'x-session-token': token } }),
+      fetch(PROXY + '/api/email-queue', { headers: { 'x-session-token': token } }),
+    ]);
+    const preview = await previewRes.json();
+    const queue = await queueRes.json();
+    const qData = queue[type] || { clients: [], pending: 0 };
+    queuePreviewClients = qData.clients || [];
+
+    $('qpm-title').textContent = labels[type] + ' Email Preview';
+    $('qpm-meta').textContent = qData.pending + ' recipients · Use [Name] for personalisation';
+    $('qpm-subject').value = preview.subject || '';
+    $('qpm-body').value = preview.plainText || '';
+    $('qpm-count').textContent = qData.pending;
+    $('qpm-recipients').innerHTML = queuePreviewClients.length > 0
+      ? queuePreviewClients.map(function(c) { return '<span style="display:inline-block;background:#E5E7EB;border-radius:4px;padding:2px 8px;margin:2px;font-size:11px;">' + (c.name || '') + ' &lt;' + c.email + '&gt;</span>'; }).join('')
+      : '<span style="color:#9CA3AF;">No pending recipients</span>';
+    $('qpm-send-btn').textContent = 'Send to ' + qData.pending + ' clients';
+    $('qpm-status').textContent = '';
+
+    var modal = $('queue-preview-modal');
+    modal.style.display = 'flex';
+  } catch (e) {
+    alert('Error loading preview: ' + e.message);
+  }
+}
+
+function closeQueuePreview() {
+  $('queue-preview-modal').style.display = 'none';
+  queuePreviewType = null;
+}
+
+async function confirmSendQueue() {
+  if (!queuePreviewType) return;
+  var btn = $('qpm-send-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  $('qpm-status').textContent = '';
+  try {
+    var res = await fetch(PROXY + '/api/email-queue/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-session-token': token },
-      body: JSON.stringify({ type }),
+      body: JSON.stringify({
+        type: queuePreviewType,
+        customSubject: $('qpm-subject').value,
+        customBody: $('qpm-body').value,
+      }),
     });
-    const data = await res.json();
+    var data = await res.json();
     if (data.ok) {
-      alert('Sent ' + data.sent + ' ' + labels[type] + ' emails!');
-      renderEmailQueue();
+      $('qpm-status').innerHTML = '<span style="color:#166534;">Sent ' + data.sent + ' emails!</span>';
+      btn.textContent = 'Done!';
+      setTimeout(function() { closeQueuePreview(); renderEmailQueue(); }, 2000);
     } else {
-      alert('Error: ' + (data.error || 'Unknown'));
+      $('qpm-status').innerHTML = '<span style="color:#DC2626;">Error: ' + (data.error || 'Unknown') + '</span>';
+      btn.disabled = false;
+      btn.textContent = 'Retry';
     }
   } catch (e) {
-    alert('Error: ' + e.message);
+    $('qpm-status').innerHTML = '<span style="color:#DC2626;">Error: ' + e.message + '</span>';
+    btn.disabled = false;
+    btn.textContent = 'Retry';
   }
 }
 

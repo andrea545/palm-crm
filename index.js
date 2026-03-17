@@ -928,9 +928,26 @@ app.get('/api/email-queue', requireAuth, async (req, res) => {
   }
 });
 
+// ─── Preview queue email template ──────────────────────────────────────────
+app.get('/api/email-queue/preview', requireAuth, async (req, res) => {
+  const { type } = req.query;
+  const templateMap = { winback: EMAIL_TEMPLATES.winBack, birthday: EMAIL_TEMPLATES.birthday, membershipRenewal: EMAIL_TEMPLATES.membershipUpsell };
+  const tplFn = templateMap[type];
+  if (!tplFn) return res.status(400).json({ error: 'Invalid type' });
+  const sample = tplFn('[Name]');
+  // Strip HTML tags to get plain text version for editing
+  const plainText = sample.html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  res.json({ subject: sample.subject.replace('[Name]', '[Name]'), html: sample.html, plainText });
+});
+
 // ─── Send queue emails (trigger win-back, birthday, or renewal batch) ──────
 app.post('/api/email-queue/send', requireAuth, async (req, res) => {
-  const { type } = req.body;
+  const { type, customSubject, customBody } = req.body;
   if (!['winback', 'birthday', 'membershipRenewal'].includes(type)) {
     return res.status(400).json({ error: 'Invalid type. Use: winback, birthday, membershipRenewal' });
   }
@@ -941,7 +958,6 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
     const clientsData = await clientsRes.json();
     const clients = (clientsData.Clients || []).filter(c => c.Email);
 
-    // Check what we already sent today
     const todayStr = now.toISOString().split('T')[0];
     const sentToday = emailLog.filter(e => e.sentAt && e.sentAt.startsWith(todayStr) && e.category === type).map(e => e.to);
 
@@ -970,18 +986,29 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
     } else if (type === 'membershipRenewal') {
       templateFn = EMAIL_TEMPLATES.membershipUpsell;
       category = 'membershipRenewal';
-      // For membership renewal, we'd need clientservices — simplified for now
       targets = [];
     }
 
     let sent = 0;
     for (const client of targets.slice(0, 50)) {
       const name = client.FirstName || 'there';
-      const tpl = templateFn(name.trim());
+      let subject, html;
+
+      if (customSubject || customBody) {
+        // Use custom content, replace [Name] with client name
+        subject = (customSubject || templateFn(name).subject).replace(/\[Name\]/g, name.trim());
+        const bodyText = (customBody || '').replace(/\[Name\]/g, name.trim());
+        html = emailWrapper(`<p style="color:#374151;line-height:1.8;font-size:15px;">${bodyText.replace(/\n/g, '<br>')}</p>`);
+      } else {
+        const tpl = templateFn(name.trim());
+        subject = tpl.subject;
+        html = tpl.html;
+      }
+
       const result = await sendEmail({
         to: client.Email,
         toName: `${client.FirstName || ''} ${client.LastName || ''}`.trim(),
-        ...tpl,
+        subject, html,
         category,
         trigger: `${category}.scheduled`,
       });
