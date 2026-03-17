@@ -3,6 +3,7 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -218,8 +219,26 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
     res.status(502).json({ error: err.message });
   }
 });
-// ─── Email Log (in-memory, persists until redeploy) ────────────────────────
-const emailLog = [];
+// ─── Email Log (persisted to file so it survives redeploys) ─────────────────
+const EMAIL_LOG_FILE = path.join(__dirname, '.email-log.json');
+let emailLog = [];
+// Load existing log on startup
+try {
+  if (fs.existsSync(EMAIL_LOG_FILE)) {
+    emailLog = JSON.parse(fs.readFileSync(EMAIL_LOG_FILE, 'utf8'));
+    console.log(`[email] Loaded ${emailLog.length} log entries from disk`);
+  }
+} catch (e) { console.error('[email] Failed to load log:', e.message); }
+// Save log to disk (debounced)
+let saveLogTimer = null;
+function saveEmailLog() {
+  if (saveLogTimer) clearTimeout(saveLogTimer);
+  saveLogTimer = setTimeout(() => {
+    try {
+      fs.writeFileSync(EMAIL_LOG_FILE, JSON.stringify(emailLog.slice(0, 500)));
+    } catch (e) { console.error('[email] Failed to save log:', e.message); }
+  }, 1000);
+}
 
 // ─── Email sending via SendGrid ───────────────────────────────────────────────
 async function sendEmail({ to, toName, subject, html, category, trigger }) {
@@ -240,6 +259,7 @@ async function sendEmail({ to, toName, subject, html, category, trigger }) {
     logEntry.status = 'simulated';
     emailLog.unshift(logEntry);
     if (emailLog.length > 500) emailLog.pop();
+    saveEmailLog();
     return { ok: true, simulated: true, logId: logEntry.id };
   }
 
@@ -266,6 +286,7 @@ async function sendEmail({ to, toName, subject, html, category, trigger }) {
     logEntry.error = err;
     emailLog.unshift(logEntry);
     if (emailLog.length > 500) emailLog.pop();
+    saveEmailLog();
     return { ok: false, error: err, logId: logEntry.id };
   }
 
@@ -275,6 +296,7 @@ async function sendEmail({ to, toName, subject, html, category, trigger }) {
   logEntry.sgMessageId = sgMsgId || null;
   emailLog.unshift(logEntry);
   if (emailLog.length > 500) emailLog.pop();
+  saveEmailLog();
 
   console.log(`[email] Sent to ${to}: ${subject} (msgId: ${sgMsgId || 'n/a'})`);
   return { ok: true, logId: logEntry.id, sgMessageId: sgMsgId };
@@ -318,14 +340,33 @@ app.get('/api/email/activity', requireAuth, async (req, res) => {
   if (!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', messages: [] });
   try {
     const limit = req.query.limit || 50;
-    const query = req.query.query || '';
-    let url = `https://api.sendgrid.com/v3/messages?limit=${limit}`;
-    if (query) url += `&query=${encodeURIComponent(query)}`;
+    const query = req.query.query || `from_email="${CONFIG.fromEmail}"`;
+    let url = `https://api.sendgrid.com/v3/messages?limit=${limit}&query=${encodeURIComponent(query)}`;
     const sgRes = await fetch(url, {
       headers: { 'Authorization': `Bearer ${CONFIG.sendgridKey}` },
     });
     const data = await sgRes.json();
-    res.json(data);
+    // Log first message to see actual field names from SendGrid
+    if (data.messages && data.messages.length > 0) {
+      console.log('[email-activity] Sample SG message keys:', Object.keys(data.messages[0]).join(', '));
+      console.log('[email-activity] Sample SG message:', JSON.stringify(data.messages[0]).substring(0, 500));
+    }
+    // Convert SendGrid messages to our log format — handle various SG field names
+    const messages = (data.messages || []).map(m => ({
+      id: m.msg_id || m.message_id || crypto.randomUUID(),
+      to: m.to_email || m.to || m.recipient || '',
+      toName: m.to_name || '',
+      subject: m.subject || '',
+      category: (m.categories || [])[0] || m.category || 'automation',
+      trigger: (m.categories || [])[0] || m.category || 'automation',
+      sentAt: m.last_event_time || m.processed_time || m.created || m.sent_at || new Date().toISOString(),
+      status: m.status || 'delivered',
+      sgMessageId: m.msg_id || m.message_id || null,
+      sgStatus: m.status,
+      opens: m.opens_count || 0,
+      clicks: m.clicks_count || 0,
+    }));
+    res.json({ messages, total: messages.length, raw_sample: data.messages ? data.messages[0] : null });
   } catch (err) {
     res.json({ error: err.message, messages: [] });
   }
@@ -511,21 +552,28 @@ const EMAIL_TEMPLATES = {
 // ─── Automation logic ─────────────────────────────────────────────────────────
 async function handleAutomations(event) {
   const type = event.type;
-  const payload = event.payload;
+  const rawPayload = event.payload;
+  // MindBody webhooks wrap the actual data inside eventData — extract it
+  const ed = rawPayload.eventData || rawPayload.EventData || {};
+  // Merge: check eventData first, then top-level payload (for manual/test triggers)
+  const payload = { ...rawPayload, ...ed };
+  console.log(`[automation] Processing ${type}, email: ${payload.email || payload.clientEmail || 'none'}, name: ${payload.firstName || payload.clientFirstName || 'unknown'}`);
   try {
     if (type === 'client.created') {
-      const name = payload.firstName || payload.FirstName || 'there';
-      const email = payload.email || payload.Email;
+      const name = payload.firstName || payload.FirstName || payload.clientFirstName || 'there';
+      const email = payload.email || payload.Email || payload.clientEmail;
       if (email) {
-        const tpl = EMAIL_TEMPLATES.welcome(name);
-        await sendEmail({ to: email, toName: name, ...tpl, category: 'welcome', trigger: 'client.created' });
+        const tpl = EMAIL_TEMPLATES.welcome(name.trim());
+        await sendEmail({ to: email, toName: name.trim(), ...tpl, category: 'welcome', trigger: 'client.created' });
         console.log(`[automation] Welcome email sent to ${email}`);
+      } else {
+        console.log(`[automation] No email found for client.created — skipped`);
       }
     }
     if (type === 'clientVisit.created' || type === 'class.checkin' || type === 'classRosterBooking.created') {
       const clientId = payload.clientId || payload.ClientId || payload.clientUniqueId || payload.ClientUniqueId;
       const siteId = CONFIG.siteId;
-      if (!clientId) return;
+      if (!clientId) { console.log(`[automation] No clientId for ${type} — skipped`); return; }
       const mbToken = await getMBToken();
       const [clientRes, servicesRes] = await Promise.all([
         fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
@@ -560,9 +608,9 @@ async function handleAutomations(event) {
       }
     }
     if (type === 'clientPurchase.created' || type === 'sale.created' || type === 'clientSale.created') {
-      const clientId = payload.clientId || payload.ClientId || payload.purchasingClientId || payload.PurchasingClientId;
+      const clientId = payload.clientId || payload.ClientId || payload.purchasingClientId || payload.PurchasingClientId || payload.clientUniqueId;
       // Webhook payload may have items array or top-level description
-      const items = payload.items || payload.Items || [];
+      const items = payload.items || payload.Items || payload.cartItems || [];
       const itemName = items.length > 0
         ? items.map(i => i.name || i.Name || i.description || i.Description || '').join(' ')
         : (payload.itemName || payload.Description || payload.description || '');
