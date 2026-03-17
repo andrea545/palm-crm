@@ -545,6 +545,32 @@ app.get('/api/webhooks/subscriptions', requireAuth, async (req, res) => {
   }
 });
 
+// Helper: safely parse JSON or return empty object
+async function safeJson(response) {
+  try {
+    const text = await response.text();
+    if (!text || text.trim().length === 0) return { _httpStatus: response.status };
+    const parsed = JSON.parse(text);
+    parsed._httpStatus = response.status;
+    return parsed;
+  } catch (e) {
+    return { _httpStatus: response.status, _parseError: e.message };
+  }
+}
+
+// Helper: activate a single subscription by ID (correct MindBody API)
+async function activateSubscription(subId) {
+  // MindBody docs: PATCH /subscriptions/{id} with {"Status": "Active"} (NOT /activate)
+  const r = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${subId}`, {
+    method: 'PATCH',
+    headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ Status: 'Active' }),
+  }, 10000);
+  const data = await safeJson(r);
+  console.log(`[webhooks] Activate ${subId}: HTTP ${r.status}`, JSON.stringify(data).substring(0, 200));
+  return data;
+}
+
 // Activate ALL pending subscriptions at once
 app.post('/api/webhooks/activate-all', requireAuth, async (req, res) => {
   try {
@@ -552,21 +578,18 @@ app.post('/api/webhooks/activate-all', requireAuth, async (req, res) => {
       headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
     }, 10000);
     const data = await r.json();
-    const subs = Array.isArray(data) ? data : (data.Subscriptions || data.subscriptions || []);
-    const pending = subs.filter(s => (s.Status || s.status || '').toLowerCase().includes('pending'));
+    // MindBody wraps subscriptions in "items" array
+    const subs = Array.isArray(data) ? data : (data.items || data.Items || data.Subscriptions || data.subscriptions || []);
+    const pending = subs.filter(s => (s.status || s.Status || '').toLowerCase().includes('pending'));
+    console.log(`[webhooks] Found ${subs.length} total, ${pending.length} pending`);
     const results = [];
     for (const sub of pending) {
-      const id = sub.SubscriptionId || sub.subscriptionId || sub.Id || sub.id;
+      const id = sub.subscriptionId || sub.SubscriptionId || sub.Id || sub.id;
       try {
-        const actRes = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${id}/activate`, {
-          method: 'PATCH',
-          headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'Active' }),
-        }, 10000);
-        const actData = await actRes.json();
-        results.push({ id, status: actData.Status || actData.status || 'activated', response: actData });
+        const actData = await activateSubscription(id);
+        results.push({ id, events: sub.eventIds, httpStatus: actData._httpStatus, status: actData.Status || actData.status || (actData._httpStatus < 300 ? 'activated' : 'failed'), response: actData });
       } catch (err) {
-        results.push({ id, status: 'error', error: err.message });
+        results.push({ id, events: sub.eventIds, status: 'error', error: err.message });
       }
     }
     res.json({ total: subs.length, pending: pending.length, results });
@@ -645,20 +668,15 @@ app.post('/api/webhooks/setup', requireAuth, async (req, res) => {
         continue;
       }
 
-      // Step 2: Activate the subscription
+      // Step 2: Activate the subscription (PATCH /subscriptions/{id} with Status: Active)
       console.log(`[webhooks] Activating subscription ${subId}...`);
-      const activateRes = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${subId}/activate`, {
-        method: 'PATCH',
-        headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'Active' }),
-      }, 10000);
-      const activateData = await activateRes.json();
-      console.log(`[webhooks] Activate response:`, JSON.stringify(activateData).substring(0, 300));
+      const activateData = await activateSubscription(subId);
 
       results.push({
         events: set.events,
         subscriptionId: subId,
-        status: activateData.status || 'activated',
+        httpStatus: activateData._httpStatus,
+        status: activateData.Status || activateData.status || (activateData._httpStatus < 300 ? 'activated' : 'failed'),
         response: activateData,
       });
     } catch (err) {
@@ -679,13 +697,7 @@ app.post('/api/webhooks/activate/:subId', requireAuth, async (req, res) => {
   try {
     const { subId } = req.params;
     console.log(`[webhooks] Manually activating subscription ${subId}...`);
-    const r = await fetchWithTimeout(`${MB_WEBHOOKS_BASE}/subscriptions/${subId}/activate`, {
-      method: 'PATCH',
-      headers: { 'API-Key': CONFIG.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'Active' }),
-    }, 10000);
-    const data = await r.json();
-    console.log(`[webhooks] Activate response:`, JSON.stringify(data).substring(0, 300));
+    const data = await activateSubscription(subId);
     res.json(data);
   } catch (err) {
     res.json({ error: err.message });
