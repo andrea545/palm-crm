@@ -957,35 +957,38 @@ async function loadDash() {
   try {
     const [cls, cts] = await Promise.all([
       api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${tod()}T23:59:59&Limit=10`),
-      api('client/clients', '?Limit=10'),
+      api('client/clients', '?Limit=50'),
     ]);
     ld('dash', false);
     ok('dash', `Connected via proxy · MindBody sandbox · ${cts.TotalResults||0} clients · ${(cls.Classes||[]).length} classes today`);
     bd('dash');
-    const C = cls.Classes || [];
+    const C = (cls.Classes || []).sort((a,b) => new Date(a.StartDateTime) - new Date(b.StartDateTime));
     const P = cts.Clients || [];
+    const totalClients = cts.TotalResults || P.length;
     allClients = P;
-    renderDashStats(C, P);
+    renderDashStats(C, P, totalClients);
     renderTodayClasses(C);
-    renderRecentClients(P);
+    // Sort recent clients by creation date (newest first)
+    const recentP = [...P].sort((a,b) => new Date(b.CreationDate||0) - new Date(a.CreationDate||0));
+    renderRecentClients(recentP);
     renderEmailQueue();
   } catch(e) {
     ld('dash', false);
     er('dash', `Proxy timeout — showing demo data. (${e.message})`);
     bd('dash');
-    renderDashStats([], []);
+    renderDashStats([], [], 0);
     renderTodayClassesDemo();
     renderRecentClientsDemo();
     renderEmailQueue();
   }
 }
-function renderDashStats(C, P) {
+function renderDashStats(C, P, totalClients) {
   const booked = C.reduce((a,c)=>a+(c.TotalBooked||0),0);
-  const fill = C.length ? Math.round(C.reduce((a,c)=>a+((c.TotalBooked||0)/Math.max(c.MaxCapacity||1,1)*100),0)/C.length) : 78;
+  const fill = C.length ? Math.round(C.reduce((a,c)=>a+((c.TotalBooked||0)/Math.max(c.MaxCapacity||1,1)*100),0)/C.length) : 0;
   $('stat-cards').innerHTML = `
-    <div class="stat"><div class="stat-l">Live clients</div><div class="stat-v">${P.length||142}</div><div class="stat-d">From MindBody API</div></div>
-    <div class="stat"><div class="stat-l">Classes today</div><div class="stat-v">${C.length||6}</div><div class="stat-d">Lagree + Mat Studio</div></div>
-    <div class="stat"><div class="stat-l">Total booked</div><div class="stat-v">${booked||47}</div><div class="stat-d">Across all today</div></div>
+    <div class="stat"><div class="stat-l">Live clients</div><div class="stat-v">${totalClients||P.length||0}</div><div class="stat-d">From MindBody API</div></div>
+    <div class="stat"><div class="stat-l">Classes today</div><div class="stat-v">${C.length||0}</div><div class="stat-d">Lagree + Mat Studio</div></div>
+    <div class="stat"><div class="stat-l">Total booked</div><div class="stat-v">${booked||0}</div><div class="stat-d">Across all today</div></div>
     <div class="stat"><div class="stat-l">Fill rate</div><div class="stat-v stat-w">${fill}%</div><div class="stat-d stat-w">Avg across classes</div></div>`;
 }
 function renderTodayClasses(C) {
@@ -1006,16 +1009,58 @@ function renderRecentClientsDemo() {
   $('recent-cts').innerHTML = [['Anna L.','#DCFCE7','#16A34A','Active','b-g'],['James M.','#FEF3C7','#D97706','Lapsed','b-a'],['Sofia P.','#DBEAFE','#2563EB','New','b-b'],['Ryan C.','#FCE7F3','#DB2777','Active','b-g']].map(([n,bg,c,s,bc])=>`
     <div class="row"><div class="av" style="background:${bg};color:${c};">${n.split(' ').map(x=>x[0]).join('')}</div><div class="ri"><div class="rn">${n}</div><div class="rm">Palm Sporting Club</div></div><span class="badge ${bc}">${s}</span></div>`).join('');
 }
-function renderEmailQueue() {
-  $('eq').innerHTML = [
-    ['Win-back · 11 clients','Lapsed 21+ days · tomorrow 9am','"We miss you at Palm!"'],
-    ['Class reminder · 36','Booked clients · 2h before class','"See you on the Megaformer!"'],
-    ['Membership renewal · 7','Expiring in 5 days','"Your membership expires soon"'],
-  ].map(([h,s,e])=>`<div style="background:#F9FAFB;border-radius:8px;padding:10px;border:1px solid #E5E7EB;">
-    <div style="font-size:12px;font-weight:600;">${h}</div>
-    <div style="font-size:11px;color:#6B7280;margin-top:2px;">${s}</div>
-    <div style="font-size:11px;color:#166534;margin-top:4px;">${e}</div>
-  </div>`).join('');
+async function renderEmailQueue() {
+  $('eq').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:10px;color:#9CA3AF;font-size:12px;">Loading queue data...</div>`;
+  try {
+    const res = await fetch(`${PROXY}/api/email-queue`, { headers: { 'x-session-token': token } });
+    const q = await res.json();
+    const wb = q.winback || { total: 0, pending: 0 };
+    const bd = q.birthday || { total: 0, pending: 0 };
+    const mr = q.membershipRenewal || { total: 0, pending: 0 };
+
+    $('eq').innerHTML = `
+      <div style="background:#F9FAFB;border-radius:8px;padding:12px;border:1px solid #E5E7EB;display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:12px;font-weight:600;">Win-back · ${wb.total} clients</div>
+        <div style="font-size:11px;color:#6B7280;">Lapsed 21+ days · ${wb.pending} pending</div>
+        <div style="font-size:11px;color:#166534;">"We miss you at Palm!"</div>
+        ${wb.pending > 0 ? `<button onclick="sendQueueEmails('winback')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">All sent today</span>`}
+      </div>
+      <div style="background:#F9FAFB;border-radius:8px;padding:12px;border:1px solid #E5E7EB;display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:12px;font-weight:600;">Birthdays today · ${bd.total} clients</div>
+        <div style="font-size:11px;color:#6B7280;">${bd.pending} pending</div>
+        <div style="font-size:11px;color:#166534;">"Happy Birthday!"</div>
+        ${bd.pending > 0 ? `<button onclick="sendQueueEmails('birthday')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">${bd.total > 0 ? 'All sent today' : 'No birthdays today'}</span>`}
+      </div>
+      <div style="background:#F9FAFB;border-radius:8px;padding:12px;border:1px solid #E5E7EB;display:flex;flex-direction:column;gap:6px;">
+        <div style="font-size:12px;font-weight:600;">Membership renewal · ${mr.total}</div>
+        <div style="font-size:11px;color:#6B7280;">Expiring within 7 days</div>
+        <div style="font-size:11px;color:#166534;">"Your membership expires soon"</div>
+        ${mr.pending > 0 ? `<button onclick="sendQueueEmails('membershipRenewal')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">None expiring soon</span>`}
+      </div>`;
+  } catch (e) {
+    $('eq').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:10px;color:#EF4444;font-size:12px;">Could not load queue: ${e.message}</div>`;
+  }
+}
+
+async function sendQueueEmails(type) {
+  const labels = { winback: 'win-back', birthday: 'birthday', membershipRenewal: 'membership renewal' };
+  if (!confirm('Send ' + labels[type] + ' emails to all pending clients?')) return;
+  try {
+    const res = await fetch(PROXY + '/api/email-queue/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-session-token': token },
+      body: JSON.stringify({ type }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Sent ' + data.sent + ' ' + labels[type] + ' emails!');
+      renderEmailQueue();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown'));
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

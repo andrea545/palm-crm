@@ -864,6 +864,137 @@ app.post('/api/webhooks/activate/:subId', requireAuth, async (req, res) => {
   }
 });
 
+// ─── Email Queue (live data from MindBody) ────────────────────────────────
+app.get('/api/email-queue', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const now = new Date();
+
+    // Fetch clients and services in parallel
+    const [clientsRes, servicesRes] = await Promise.all([
+      fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, { headers: mbHeaders(mbToken) }, 15000),
+      fetchWithTimeout(`${MB_BASE}/client/clientservices?Limit=200`, { headers: mbHeaders(mbToken) }, 15000).catch(() => null),
+    ]);
+    const clientsData = await clientsRes.json();
+    const clients = (clientsData.Clients || []).filter(c => c.Email);
+
+    // --- Win-back: clients who haven't been active in 21+ days ---
+    const lapsedCutoff = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
+    const lapsed = clients.filter(c => {
+      const lastVisit = c.LastModifiedDateTime || c.CreationDate;
+      return lastVisit && new Date(lastVisit) < lapsedCutoff && c.Active !== false;
+    });
+
+    // --- Membership renewal: services expiring within 7 days ---
+    let expiringCount = 0;
+    if (servicesRes) {
+      try {
+        const servData = await servicesRes.json();
+        const services = servData.ClientServices || [];
+        const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        expiringCount = services.filter(s => {
+          const exp = s.ExpirationDate ? new Date(s.ExpirationDate) : null;
+          return exp && exp > now && exp < sevenDays;
+        }).length;
+      } catch (e) { /* ignore */ }
+    }
+
+    // --- Birthday: clients with birthday today ---
+    const todayMonth = now.getMonth() + 1;
+    const todayDay = now.getDate();
+    const birthdayClients = clients.filter(c => {
+      if (!c.BirthDate) return false;
+      const bd = new Date(c.BirthDate);
+      return (bd.getMonth() + 1) === todayMonth && bd.getDate() === todayDay;
+    });
+
+    // --- Check which emails have already been sent today (avoid duplicates) ---
+    const todayStr = now.toISOString().split('T')[0];
+    const sentToday = emailLog.filter(e => e.sentAt && e.sentAt.startsWith(todayStr));
+    const sentWinback = sentToday.filter(e => e.category === 'winback').map(e => e.to);
+    const sentBirthday = sentToday.filter(e => e.category === 'birthday').map(e => e.to);
+
+    const pendingWinback = lapsed.filter(c => !sentWinback.includes(c.Email));
+    const pendingBirthday = birthdayClients.filter(c => !sentBirthday.includes(c.Email));
+
+    res.json({
+      winback: { total: lapsed.length, pending: pendingWinback.length, clients: pendingWinback.slice(0, 10).map(c => ({ name: c.FirstName, email: c.Email })) },
+      birthday: { total: birthdayClients.length, pending: pendingBirthday.length, clients: pendingBirthday.slice(0, 10).map(c => ({ name: c.FirstName, email: c.Email })) },
+      membershipRenewal: { total: expiringCount, pending: expiringCount },
+    });
+  } catch (err) {
+    console.error('[email-queue]', err.message);
+    res.json({ winback: { total: 0, pending: 0 }, birthday: { total: 0, pending: 0 }, membershipRenewal: { total: 0, pending: 0 } });
+  }
+});
+
+// ─── Send queue emails (trigger win-back, birthday, or renewal batch) ──────
+app.post('/api/email-queue/send', requireAuth, async (req, res) => {
+  const { type } = req.body;
+  if (!['winback', 'birthday', 'membershipRenewal'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid type. Use: winback, birthday, membershipRenewal' });
+  }
+  try {
+    const mbToken = await getMBToken();
+    const now = new Date();
+    const clientsRes = await fetchWithTimeout(`${MB_BASE}/client/clients?Limit=200`, { headers: mbHeaders(mbToken) }, 15000);
+    const clientsData = await clientsRes.json();
+    const clients = (clientsData.Clients || []).filter(c => c.Email);
+
+    // Check what we already sent today
+    const todayStr = now.toISOString().split('T')[0];
+    const sentToday = emailLog.filter(e => e.sentAt && e.sentAt.startsWith(todayStr) && e.category === type).map(e => e.to);
+
+    let targets = [];
+    let templateFn;
+    let category;
+
+    if (type === 'winback') {
+      const cutoff = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
+      targets = clients.filter(c => {
+        const lastVisit = c.LastModifiedDateTime || c.CreationDate;
+        return lastVisit && new Date(lastVisit) < cutoff && c.Active !== false && !sentToday.includes(c.Email);
+      });
+      templateFn = EMAIL_TEMPLATES.winBack;
+      category = 'winback';
+    } else if (type === 'birthday') {
+      const todayMonth = now.getMonth() + 1;
+      const todayDay = now.getDate();
+      targets = clients.filter(c => {
+        if (!c.BirthDate) return false;
+        const bd = new Date(c.BirthDate);
+        return (bd.getMonth() + 1) === todayMonth && bd.getDate() === todayDay && !sentToday.includes(c.Email);
+      });
+      templateFn = EMAIL_TEMPLATES.birthday;
+      category = 'birthday';
+    } else if (type === 'membershipRenewal') {
+      templateFn = EMAIL_TEMPLATES.membershipUpsell;
+      category = 'membershipRenewal';
+      // For membership renewal, we'd need clientservices — simplified for now
+      targets = [];
+    }
+
+    let sent = 0;
+    for (const client of targets.slice(0, 50)) {
+      const name = client.FirstName || 'there';
+      const tpl = templateFn(name.trim());
+      const result = await sendEmail({
+        to: client.Email,
+        toName: `${client.FirstName || ''} ${client.LastName || ''}`.trim(),
+        ...tpl,
+        category,
+        trigger: `${category}.scheduled`,
+      });
+      if (result.ok) sent++;
+    }
+
+    res.json({ ok: true, sent, total: targets.length });
+  } catch (err) {
+    console.error('[email-queue/send]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Health ───────────────────────────────────────────────────────────────────
 // ─── SendGrid Email Stats ─────────────────────────────────────────────────
 app.get('/api/email/stats', requireAuth, async (req, res) => {
