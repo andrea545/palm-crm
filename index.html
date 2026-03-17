@@ -994,9 +994,9 @@ async function loadDash() {
     ld('dash', false);
     const P = cts.Clients || [];
     const totalClients = cts.TotalResults || cts.PagingResponse?.TotalResults || P.length;
-    ok('dash', `Connected via proxy · MindBody sandbox · ${totalClients} clients · ${(cls.Classes||[]).length} classes today`);
+    const C = (cls.Classes || []).filter(c => !c.IsCanceled).sort((a,b) => new Date(a.StartDateTime) - new Date(b.StartDateTime));
+    ok('dash', `Connected via proxy · MindBody sandbox · ${totalClients} clients · ${C.length} classes today`);
     bd('dash');
-    const C = (cls.Classes || []).sort((a,b) => new Date(a.StartDateTime) - new Date(b.StartDateTime));
     allClients = P;
     renderDashStats(C, P, totalClients);
     renderTodayClasses(C);
@@ -1029,8 +1029,8 @@ function renderDashStats(C, P, totalClients) {
 }
 function renderTodayClasses(C) {
   if (!C.length) { renderTodayClassesDemo(); return; }
-  $('today-cls').innerHTML = C.slice(0,5).map((c,i)=>`
-    <div class="row"><div class="cdot" style="background:${COLORS[i%5]};"></div><div class="ri"><div class="rn">${c.ClassDescription?.Name||'Class'}</div><div class="rm">${ft(c.StartDateTime)} · ${c.Staff?.DisplayName||'Staff'}</div></div><span class="badge b-g">${c.TotalBooked||0}/${c.MaxCapacity||'?'}</span></div>`).join('');
+  $('today-cls').innerHTML = C.map((c,i)=>`
+    <div class="row"><div class="cdot" style="background:${COLORS[i%COLORS.length]};"></div><div class="ri"><div class="rn">${c.ClassDescription?.Name||'Class'}</div><div class="rm">${ft(c.StartDateTime)} · ${c.Staff?.DisplayName||'Staff'}</div></div><span class="badge b-g">${c.TotalBooked||0}/${c.MaxCapacity||'?'}</span></div>`).join('');
 }
 function renderTodayClassesDemo() {
   $('today-cls').innerHTML = [['Classic Lagree','9:30','7/10'],['Legs & Abs','10:30','6/10'],['Intro Lagree','17:30','5/10'],['Classic Lagree','18:30','8/10']].map(([n,t,s],i)=>`
