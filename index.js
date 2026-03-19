@@ -611,20 +611,45 @@ async function handleAutomations(event) {
       const name = client.FirstName || 'there';
       const email = client.Email;
       if (!email) return;
-      for (const svc of services) {
-        const remaining = svc.Remaining || 0;
-        const total = svc.Count || 0;
-        const svcName = (svc.Name || '').toLowerCase();
-        if (remaining === 0 && total <= 3 && svcName.includes('intro')) {
+      // Filter to active services only (not expired more than 7 days ago)
+      const activeServices = services.filter(s => {
+        if (s.ExpirationDate && new Date(s.ExpirationDate) < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) return false;
+        return true;
+      });
+
+      // Categorise services
+      const introPacks = activeServices.filter(s => (s.Name||'').toLowerCase().includes('intro') && (s.Count||0) <= 3 && (s.Count||0) > 0);
+      const classPacks = activeServices.filter(s => {
+        const n = (s.Name||'').toLowerCase();
+        return (s.Count||0) > 3 && !n.includes('intro') && !n.includes('unlimited') && !n.includes('membership');
+      });
+
+      // Intro pack complete: ALL intro packs used up
+      const introAllUsed = introPacks.length > 0 && introPacks.every(s => (s.Remaining ?? 0) === 0);
+      if (introAllUsed) {
+        const alreadySent = emailLog.some(e => e.to === email && e.category === 'intro_complete');
+        if (!alreadySent) {
           const tpl = EMAIL_TEMPLATES.introPackComplete(name);
           await sendEmail({ to: email, toName: name, ...tpl, category: 'intro_complete', trigger: 'classRosterBooking.created' });
           console.log(`[automation] Intro pack complete email sent to ${email}`);
         }
-        if (remaining === 0 && total > 3 && !svcName.includes('intro') && !svcName.includes('unlimited') && !svcName.includes('membership')) {
+      }
+
+      // Last credit: ONLY if ALL class packs have 0 remaining (no credits left anywhere)
+      const hasAnyCredits = classPacks.some(s => (s.Remaining ?? 0) > 0);
+      const allPacksEmpty = classPacks.length > 0 && !hasAnyCredits;
+      if (allPacksEmpty) {
+        const recentlySent = emailLog.some(e => e.to === email && e.category === 'last_credit' && e.sentAt > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+        if (!recentlySent) {
           const tpl = EMAIL_TEMPLATES.lastCredit(name);
           await sendEmail({ to: email, toName: name, ...tpl, category: 'last_credit', trigger: 'classRosterBooking.created' });
-          console.log(`[automation] Last credit email sent to ${email}`);
+          console.log(`[automation] Last credit email sent to ${email} — all ${classPacks.length} packs empty`);
+        } else {
+          console.log(`[automation] Last credit already sent to ${email} in past 30 days — skipped`);
         }
+      } else if (classPacks.length > 0) {
+        const totalRemaining = classPacks.reduce((sum, s) => sum + (s.Remaining ?? 0), 0);
+        console.log(`[automation] ${email} still has ${totalRemaining} credits across ${classPacks.length} packs — no last credit email`);
       }
     }
     if (type === 'clientPurchase.created' || type === 'sale.created' || type === 'clientSale.created') {
@@ -896,19 +921,28 @@ app.get('/api/email-queue', requireAuth, async (req, res) => {
       return lastVisit && new Date(lastVisit) < lapsedCutoff && c.Active !== false;
     });
 
-    // --- Membership renewal: services expiring within 7 days ---
-    let expiringCount = 0;
+    // --- Intro expired: clients whose intro pack credits are used up (remaining=0) ---
+    let introExpired = [];
     if (servicesRes) {
       try {
         const servData = await servicesRes.json();
         const services = servData.ClientServices || [];
-        const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        expiringCount = services.filter(s => {
-          const exp = s.ExpirationDate ? new Date(s.ExpirationDate) : null;
-          return exp && exp > now && exp < sevenDays;
-        }).length;
+        // Find clients with intro packs that have 0 remaining
+        const introClientsMap = {};
+        services.forEach(s => {
+          const svcName = (s.Name || '').toLowerCase();
+          if (svcName.includes('intro') && (s.Remaining === 0) && s.ClientId) {
+            introClientsMap[s.ClientId] = true;
+          }
+        });
+        // Match with client emails
+        introExpired = clients.filter(c => c.Id && introClientsMap[c.Id]);
       } catch (e) { /* ignore */ }
     }
+    const sentIntroUpsell = emailLog
+      .filter(e => e.category === 'intro_expired' && e.sentAt > winbackCooloff)
+      .map(e => e.to);
+    const pendingIntroExpired = introExpired.filter(c => !sentIntroUpsell.includes(c.Email));
 
     // --- Birthday: clients with birthday today ---
     const todayMonth = now.getMonth() + 1;
@@ -937,18 +971,18 @@ app.get('/api/email-queue', requireAuth, async (req, res) => {
     res.json({
       winback: { total: lapsed.length, pending: pendingWinback.length, clients: pendingWinback.slice(0, 10).map(c => ({ name: c.FirstName, email: c.Email })) },
       birthday: { total: birthdayClients.length, pending: pendingBirthday.length, clients: pendingBirthday.slice(0, 10).map(c => ({ name: c.FirstName, email: c.Email })) },
-      membershipRenewal: { total: expiringCount, pending: expiringCount },
+      introExpired: { total: introExpired.length, pending: pendingIntroExpired.length, clients: pendingIntroExpired.slice(0, 10).map(c => ({ name: c.FirstName, email: c.Email })) },
     });
   } catch (err) {
     console.error('[email-queue]', err.message);
-    res.json({ winback: { total: 0, pending: 0 }, birthday: { total: 0, pending: 0 }, membershipRenewal: { total: 0, pending: 0 } });
+    res.json({ winback: { total: 0, pending: 0 }, birthday: { total: 0, pending: 0 }, introExpired: { total: 0, pending: 0 } });
   }
 });
 
 // ─── Preview queue email template ──────────────────────────────────────────
 app.get('/api/email-queue/preview', requireAuth, async (req, res) => {
   const { type } = req.query;
-  const templateMap = { winback: EMAIL_TEMPLATES.winBack, birthday: EMAIL_TEMPLATES.birthday, membershipRenewal: EMAIL_TEMPLATES.membershipUpsell };
+  const templateMap = { winback: EMAIL_TEMPLATES.winBack, birthday: EMAIL_TEMPLATES.birthday, introExpired: EMAIL_TEMPLATES.introPackComplete };
   const tplFn = templateMap[type];
   if (!tplFn) return res.status(400).json({ error: 'Invalid type' });
   const sample = tplFn('[Name]');
@@ -965,8 +999,8 @@ app.get('/api/email-queue/preview', requireAuth, async (req, res) => {
 // ─── Send queue emails (trigger win-back, birthday, or renewal batch) ──────
 app.post('/api/email-queue/send', requireAuth, async (req, res) => {
   const { type, customSubject, customBody } = req.body;
-  if (!['winback', 'birthday', 'membershipRenewal'].includes(type)) {
-    return res.status(400).json({ error: 'Invalid type. Use: winback, birthday, membershipRenewal' });
+  if (!['winback', 'birthday', 'introExpired'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid type. Use: winback, birthday, introExpired' });
   }
   try {
     const mbToken = await getMBToken();
@@ -1007,10 +1041,25 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
       });
       templateFn = EMAIL_TEMPLATES.birthday;
       category = 'birthday';
-    } else if (type === 'membershipRenewal') {
-      templateFn = EMAIL_TEMPLATES.membershipUpsell;
-      category = 'membershipRenewal';
-      targets = [];
+    } else if (type === 'introExpired') {
+      const alreadySent = emailLog
+        .filter(e => e.category === 'intro_expired' && e.sentAt > winbackCooloff)
+        .map(e => e.to);
+      // Get clients with expired intro packs from services
+      const mbToken2 = await getMBToken();
+      const svcRes = await fetchWithTimeout(`${MB_BASE}/client/clientservices?Limit=200`, { headers: mbHeaders(mbToken2) }, 15000).catch(() => null);
+      if (svcRes) {
+        const svcData = await svcRes.json();
+        const introClientIds = {};
+        (svcData.ClientServices || []).forEach(s => {
+          if ((s.Name || '').toLowerCase().includes('intro') && s.Remaining === 0 && s.ClientId) {
+            introClientIds[s.ClientId] = true;
+          }
+        });
+        targets = clients.filter(c => c.Id && introClientIds[c.Id] && !alreadySent.includes(c.Email));
+      }
+      templateFn = EMAIL_TEMPLATES.introPackComplete;
+      category = 'intro_expired';
     }
 
     let sent = 0;
@@ -1037,6 +1086,31 @@ app.post('/api/email-queue/send', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[email-queue/send]', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Full clients list with pagination ─────────────────────────────────────
+app.get('/api/clients/all', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const allClients = await fetchAllMBClients(mbToken);
+    // Return clients with the fields the frontend needs
+    const clients = allClients.map(c => ({
+      Id: c.Id || c.UniqueId,
+      FirstName: c.FirstName,
+      LastName: c.LastName,
+      Email: c.Email,
+      MobilePhone: c.MobilePhone || c.HomePhone,
+      Active: c.Active !== false,
+      CreationDate: c.CreationDate,
+      LastModifiedDateTime: c.LastModifiedDateTime,
+      BirthDate: c.BirthDate,
+      FirstClassDate: c.FirstClassDate,
+    }));
+    res.json({ clients, total: clients.length });
+  } catch (err) {
+    console.error('[clients/all]', err.message);
+    res.status(500).json({ error: err.message, clients: [] });
   }
 });
 

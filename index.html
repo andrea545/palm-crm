@@ -547,13 +547,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <!-- CLIENTS -->
     <div id="page-clients" class="page">
-      <input class="srch" id="csrch" placeholder="Search by name or email..." oninput="filterClients(this.value)"/>
+      <input class="srch" id="client-search" placeholder="Search by name or email..." oninput="filterClients(this.value)"/>
       <div id="clients-load" class="loading"><div class="spin"></div>Loading clients...</div>
+      <div id="clients-ok" class="ok-box" style="display:none;"></div>
       <div id="clients-err" class="err-box" style="display:none;"></div>
       <div id="clients-body" style="display:none;">
         <div class="card" style="padding:0;overflow:hidden;">
           <table class="tbl">
-            <thead><tr><th>Client</th><th>Active</th><th>Phone</th><th>Visits</th><th>Status</th></tr></thead>
+            <thead id="client-thead"><tr><th>Client</th><th>Active</th><th>Phone</th><th>Visits</th><th>Status</th></tr></thead>
             <tbody id="client-tbody"></tbody>
           </table>
         </div>
@@ -1005,10 +1006,17 @@ async function loadDash() {
     renderDashStats(C, P, totalClients);
     renderTodayClasses(C);
     // Sort recent clients by most recent activity (newest first)
+    // Try multiple date fields, fall back to client ID (higher = newer)
     const recentP = [...P].sort((a,b) => {
-      const dateA = a.CreationDate || a.LastModifiedDateTime || a.FirstClassDate || '2000-01-01';
-      const dateB = b.CreationDate || b.LastModifiedDateTime || b.FirstClassDate || '2000-01-01';
-      return new Date(dateB) - new Date(dateA);
+      const dateA = a.CreationDate || a.LastModifiedDateTime || a.FirstClassDate || null;
+      const dateB = b.CreationDate || b.LastModifiedDateTime || b.FirstClassDate || null;
+      if (dateA && dateB) return new Date(dateB) - new Date(dateA);
+      if (dateA && !dateB) return -1;
+      if (!dateA && dateB) return 1;
+      // Fall back to ID comparison (higher IDs = newer clients in MindBody)
+      const idA = parseInt(a.Id) || parseInt(a.UniqueId) || 0;
+      const idB = parseInt(b.Id) || parseInt(b.UniqueId) || 0;
+      return idB - idA;
     });
     renderRecentClients(recentP);
     renderEmailQueue();
@@ -1056,26 +1064,26 @@ async function renderEmailQueue() {
     const q = await res.json();
     const wb = q.winback || { total: 0, pending: 0 };
     const bd = q.birthday || { total: 0, pending: 0 };
-    const mr = q.membershipRenewal || { total: 0, pending: 0 };
+    const ie = q.introExpired || { total: 0, pending: 0 };
 
     $('eq').innerHTML = `
       <div style="background:#F9FAFB;border-radius:8px;padding:12px;border:1px solid #E5E7EB;display:flex;flex-direction:column;gap:6px;">
         <div style="font-size:12px;font-weight:600;">Win-back · ${wb.total} clients</div>
         <div style="font-size:11px;color:#6B7280;">Lapsed 21+ days · ${wb.pending} pending</div>
         <div style="font-size:11px;color:#166534;">"We miss you at Palm!"</div>
-        ${wb.pending > 0 ? `<button onclick="sendQueueEmails('winback')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">All sent today</span>`}
+        ${wb.pending > 0 ? `<button onclick="sendQueueEmails('winback')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">All sent</span>`}
       </div>
       <div style="background:#F9FAFB;border-radius:8px;padding:12px;border:1px solid #E5E7EB;display:flex;flex-direction:column;gap:6px;">
         <div style="font-size:12px;font-weight:600;">Birthdays today · ${bd.total} clients</div>
         <div style="font-size:11px;color:#6B7280;">${bd.pending} pending</div>
         <div style="font-size:11px;color:#166534;">"Happy Birthday!"</div>
-        ${bd.pending > 0 ? `<button onclick="sendQueueEmails('birthday')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">${bd.total > 0 ? 'All sent today' : 'No birthdays today'}</span>`}
+        ${bd.pending > 0 ? `<button onclick="sendQueueEmails('birthday')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">${bd.total > 0 ? 'All sent' : 'No birthdays today'}</span>`}
       </div>
       <div style="background:#F9FAFB;border-radius:8px;padding:12px;border:1px solid #E5E7EB;display:flex;flex-direction:column;gap:6px;">
-        <div style="font-size:12px;font-weight:600;">Membership renewal · ${mr.total}</div>
-        <div style="font-size:11px;color:#6B7280;">Expiring within 7 days</div>
-        <div style="font-size:11px;color:#166534;">"Your membership expires soon"</div>
-        ${mr.pending > 0 ? `<button onclick="sendQueueEmails('membershipRenewal')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">None expiring soon</span>`}
+        <div style="font-size:12px;font-weight:600;">Intro expired · ${ie.total} clients</div>
+        <div style="font-size:11px;color:#6B7280;">Finished intro pack · ${ie.pending} pending</div>
+        <div style="font-size:11px;color:#166534;">"Check out our class packs!"</div>
+        ${ie.pending > 0 ? `<button onclick="sendQueueEmails('introExpired')" class="btn btn-g" style="font-size:10px;padding:4px 10px;margin-top:4px;align-self:flex-start;">Send now</button>` : `<span style="font-size:10px;color:#9CA3AF;">${ie.total > 0 ? 'All sent' : 'None pending'}</span>`}
       </div>`;
   } catch (e) {
     $('eq').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:10px;color:#EF4444;font-size:12px;">Could not load queue: ${e.message}</div>`;
@@ -1087,7 +1095,7 @@ let queuePreviewClients = [];
 let queuePreviewHtml = '';
 
 async function sendQueueEmails(type) {
-  const labels = { winback: 'Win-back', birthday: 'Birthday', membershipRenewal: 'Membership renewal' };
+  const labels = { winback: 'Win-back', birthday: 'Birthday', introExpired: 'Intro expired' };
   queuePreviewType = type;
   try {
     const [previewRes, queueRes] = await Promise.all([
@@ -1715,16 +1723,32 @@ function renderRecommendations(d) {
 async function loadSchedule() {
   ld('sched', true);
   try {
-    const data = await api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${add(tod(),6)}T23:59:59&Limit=60`);
+    const data = await api('class/classes', `?StartDateTime=${tod()}T00:00:00&EndDateTime=${add(tod(),6)}T23:59:59&Limit=200`);
     ld('sched', false); bd('sched');
-    const cls = data.Classes || [];
+    const cls = (data.Classes || []).filter(c => !c.IsCanceled);
+    // Group classes by day of week
     const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    let grid = days.map(d=>`<div><div class="day-h">${d}</div>`);
-    cls.forEach(c => {
-      const dow = (new Date(c.StartDateTime).getDay()+6)%7;
-      const isL = /lagree|classic|intro|legs/i.test(c.ClassDescription?.Name||'');
-      const pct = c.MaxCapacity ? Math.round((c.TotalBooked||0)/c.MaxCapacity*100) : 0;
-      grid[dow] += `<div class="cb ${isL?'cb-l':'cb-m'}"><span class="cb-t">${ft(c.StartDateTime)}</span><span class="cb-n">${c.ClassDescription?.Name||'Class'}</span><span class="cb-s">${c.TotalBooked||0}/${c.MaxCapacity||'?'} · ${pct}%</span></div>`;
+    var dayBuckets = [[], [], [], [], [], [], []];
+    cls.forEach(function(c) {
+      var dow = (new Date(c.StartDateTime).getDay() + 6) % 7;
+      dayBuckets[dow].push(c);
+    });
+    // Sort each day's classes by time (extract HH:MM from StartDateTime)
+    dayBuckets.forEach(function(bucket) {
+      bucket.sort(function(a, b) {
+        var timeA = a.StartDateTime ? a.StartDateTime.split('T')[1] || '' : '';
+        var timeB = b.StartDateTime ? b.StartDateTime.split('T')[1] || '' : '';
+        return timeA.localeCompare(timeB);
+      });
+    });
+    var grid = days.map(function(d) { return '<div><div class="day-h">' + d + '</div>'; });
+    dayBuckets.forEach(function(bucket, dow) {
+      bucket.forEach(function(c) {
+        var isL = /lagree|classic|intro|legs/i.test(c.ClassDescription ? c.ClassDescription.Name || '' : '');
+        var pct = c.MaxCapacity ? Math.round((c.TotalBooked||0)/c.MaxCapacity*100) : 0;
+        var name = c.ClassDescription ? c.ClassDescription.Name || 'Class' : 'Class';
+        grid[dow] += '<div class="cb ' + (isL?'cb-l':'cb-m') + '"><span class="cb-t">' + ft(c.StartDateTime) + '</span><span class="cb-n">' + name + '</span><span class="cb-s">' + (c.TotalBooked||0) + '/' + (c.MaxCapacity||'?') + ' · ' + pct + '%</span></div>';
+      });
     });
     if (!cls.length) {
       [['9:30','Classic Lagree','4/10'],['10:30','Legs & Abs','6/10'],['18:30','Classic Lagree','8/10']].forEach(([t,n,s])=>{ grid[0]+=`<div class="cb cb-l"><span class="cb-t">${t}</span><span class="cb-n">${n}</span><span class="cb-s">${s}</span></div>`; });
@@ -1745,67 +1769,151 @@ async function loadSchedule() {
 }
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
+let clientSortField = 'name';
+let clientSortDir = 'asc';
 async function loadClients() {
   ld('clients', true);
   try {
-    const data = await api('client/clients', '?Limit=50');
+    // Use dedicated endpoint that paginates through all clients
+    var controller = new AbortController();
+    var tid = setTimeout(function() { controller.abort(); }, 30000);
+    var res = await fetch(PROXY + '/api/clients/all', {
+      headers: { 'x-session-token': token },
+      signal: controller.signal
+    });
+    clearTimeout(tid);
+    if (res.status === 401) { window.location.href = '/login'; return; }
+    var data = await res.json();
     ld('clients', false); bd('clients');
-    allClients = data.Clients || [];
-    renderClients(allClients);
+    allClients = (data.clients || []).filter(function(c) { return c.Email; });
+    ok('clients', 'Loaded ' + allClients.length + ' clients from MindBody');
+    clientSortField = 'name';
+    clientSortDir = 'asc';
+    renderClients(sortClients(allClients));
   } catch(e) {
     ld('clients', false); er('clients', e.message); bd('clients');
-    allClients = [
-      {FirstName:'Anna',LastName:'Lopez',Active:true,MobilePhone:'+34 600 111 222',VisitCount:47,Email:'anna@email.com'},
-      {FirstName:'James',LastName:'Mitchell',Active:false,MobilePhone:'+44 7700 900123',VisitCount:23,Email:'james@email.com'},
-      {FirstName:'Sofia',LastName:'Patel',Active:true,MobilePhone:'+34 600 333 444',VisitCount:6,Email:'sofia@email.com'},
-      {FirstName:'Ryan',LastName:'Cruz',Active:true,MobilePhone:'+34 600 555 666',VisitCount:89,Email:'ryan@email.com'},
-      {FirstName:'Laura',LastName:'Chen',Active:true,MobilePhone:'+34 600 777 888',VisitCount:62,Email:'laura@email.com'},
-    ];
-    renderClients(allClients);
+    allClients = [];
+    renderClients([]);
   }
 }
+function sortClients(list) {
+  var field = clientSortField;
+  var dir = clientSortDir === 'asc' ? 1 : -1;
+  return [...list].sort(function(a,b) {
+    if (field === 'name') return dir * ((a.FirstName||'') + ' ' + (a.LastName||'')).localeCompare((b.FirstName||'') + ' ' + (b.LastName||''));
+    if (field === 'visits') return dir * ((a.VisitCount||0) - (b.VisitCount||0));
+    if (field === 'active') return dir * (new Date(a.LastModifiedDateTime||0) - new Date(b.LastModifiedDateTime||0));
+    if (field === 'status') return dir * ((a.Active?1:0) - (b.Active?1:0));
+    return 0;
+  });
+}
+function toggleClientSort(field) {
+  if (clientSortField === field) {
+    clientSortDir = clientSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    clientSortField = field;
+    clientSortDir = field === 'visits' ? 'desc' : 'asc';
+  }
+  var q = ($('client-search') || {}).value || '';
+  var filtered = q ? allClients.filter(function(c) { return ((c.FirstName||'') + ' ' + (c.LastName||'') + ' ' + (c.Email||'')).toLowerCase().includes(q.toLowerCase()); }) : allClients;
+  renderClients(sortClients(filtered));
+}
 function renderClients(list) {
-  $('client-tbody').innerHTML = list.map((c,i)=>`<tr>
-    <td><div style="display:flex;align-items:center;gap:8px;">
-      <div class="av" style="background:${FILLS[i%5]};color:${COLORS[i%5]};">${ini(c.FirstName,c.LastName)}</div>
-      <div><div style="font-weight:500;">${c.FirstName||''} ${c.LastName||''}</div><div style="font-size:11px;color:#6B7280;">${c.Email||'—'}</div></div>
-    </div></td>
-    <td style="color:#6B7280;font-size:12px;">${fd(c.LastModifiedDateTime)}</td>
-    <td style="font-size:12px;">${c.MobilePhone||'—'}</td>
-    <td style="font-weight:500;">${c.VisitCount||0}</td>
-    <td><span class="badge ${c.Active?'b-g':'b-a'}">${c.Active?'Active':'Inactive'}</span></td>
-  </tr>`).join('');
+  var arrow = function(f) { return clientSortField === f ? (clientSortDir === 'asc' ? ' ▲' : ' ▼') : ''; };
+  $('client-thead').innerHTML = '<tr>' +
+    '<th onclick="toggleClientSort(\'name\')" style="cursor:pointer;">CLIENT' + arrow('name') + '</th>' +
+    '<th onclick="toggleClientSort(\'active\')" style="cursor:pointer;">LAST ACTIVE' + arrow('active') + '</th>' +
+    '<th>PHONE</th>' +
+    '<th onclick="toggleClientSort(\'visits\')" style="cursor:pointer;">VISITS' + arrow('visits') + '</th>' +
+    '<th onclick="toggleClientSort(\'status\')" style="cursor:pointer;">STATUS' + arrow('status') + '</th></tr>';
+  if (list.length === 0) {
+    $('client-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:#9CA3AF;">No clients found</td></tr>';
+    return;
+  }
+  $('client-tbody').innerHTML = list.map(function(c,i) { return '<tr>' +
+    '<td><div style="display:flex;align-items:center;gap:8px;">' +
+      '<div class="av" style="background:' + FILLS[i%5] + ';color:' + COLORS[i%5] + ';">' + ini(c.FirstName,c.LastName) + '</div>' +
+      '<div><div style="font-weight:500;">' + (c.FirstName||'') + ' ' + (c.LastName||'') + '</div><div style="font-size:11px;color:#6B7280;">' + (c.Email||'—') + '</div></div>' +
+    '</div></td>' +
+    '<td style="color:#6B7280;font-size:12px;">' + fd(c.LastModifiedDateTime) + '</td>' +
+    '<td style="font-size:12px;">' + (c.MobilePhone||'—') + '</td>' +
+    '<td style="font-weight:500;">' + (c.VisitCount||0) + '</td>' +
+    '<td><span class="badge ' + (c.Active?'b-g':'b-a') + '">' + (c.Active?'Active':'Inactive') + '</span></td>' +
+  '</tr>'; }).join('');
 }
 function filterClients(q) {
-  renderClients(allClients.filter(c=>`${c.FirstName} ${c.LastName} ${c.Email||''}`.toLowerCase().includes(q.toLowerCase())));
+  var filtered = allClients.filter(function(c) { return ((c.FirstName||'') + ' ' + (c.LastName||'') + ' ' + (c.Email||'')).toLowerCase().includes(q.toLowerCase()); });
+  renderClients(sortClients(filtered));
 }
 
 // ─── Attendance ───────────────────────────────────────────────────────────────
 async function loadAttendance() {
   ld('att', true);
   try {
-    const data = await api('class/classvisits', '?ClassId=1&Limit=20');
+    // Fetch this week's classes (Mon-Sun)
+    const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
+    const wsISO = weekStart.toISOString().split('T')[0];
+    const weISO = weekEnd.toISOString().split('T')[0];
+    const data = await api('class/classes', '?StartDateTime=' + wsISO + 'T00:00:00&EndDateTime=' + weISO + 'T23:59:59&Limit=100');
+    const classes = (data.Classes || []).filter(function(c) { return !c.IsCanceled; });
     ld('att', false); bd('att');
-    renderAttendance(data.Visits||[]);
+    renderAttendance(classes);
   } catch(e) {
     ld('att', false); er('att', e.message); bd('att');
     renderAttendance([]);
   }
 }
-function renderAttendance(visits) {
-  $('att-stats').innerHTML = `
-    <div class="stat"><div class="stat-l">Check-ins this week</div><div class="stat-v">${visits.length||218}</div><div class="stat-d">+12 vs last week</div></div>
-    <div class="stat"><div class="stat-l">No-shows</div><div class="stat-v stat-w">14</div><div class="stat-d stat-w">-3 vs last week</div></div>
-    <div class="stat"><div class="stat-l">Avg fill rate</div><div class="stat-v">78%</div><div class="stat-d">Up from 71%</div></div>`;
-  $('fill-rates').innerHTML = [['Classic Lagree',86,'#16A34A'],['Intro Lagree',80,'#2563EB'],['Legs & Abs',90,'#D97706'],['Aerial Yoga',75,'#DB2777'],['Mat Pilates',60,'#7C3AED'],['Outdoor Pilates',50,'#DC2626']]
-    .map(([n,p,c])=>`<div class="ab-wrap"><div class="ab-lbl"><span>${n}</span><span>${p}%</span></div><div class="ab-track"><div class="ab-fill" style="width:${p}%;background:${c};"></div></div></div>`).join('');
-  const names = visits.length ? visits.slice(0,6).map((v,i)=>[`${v.Client?.FirstName||''} ${v.Client?.LastName||''}`.trim(),FILLS[i%5],COLORS[i%5],v.SignedIn]) :
-    [['Anna Lopez','#DCFCE7','#16A34A',true],['Ryan Cruz','#FEF3C7','#D97706',true],['Laura Chen','#DCFCE7','#16A34A',true],['James M.','#FEF3C7','#D97706',false],['Sofia Patel','#DBEAFE','#2563EB',false]];
-  $('ci-count').textContent = names.filter(n=>n[3]).length + ' today';
-  $('checkins').innerHTML = names.map(([n,bg,c,ok])=>`
-    <div class="row"><div class="av" style="background:${bg};color:${c};">${n.split(' ').map(x=>x&&x[0]||'').join('').slice(0,2)||'?'}</div>
-    <div class="ri"><div class="rn">${n||'Client'}</div></div>
-    <span class="badge ${ok?'b-g':'b-r'}">${ok?'Checked in':'No-show'}</span></div>`).join('');
+function renderAttendance(classes) {
+  // Calculate real stats from class data
+  var totalBooked = 0, totalCapacity = 0, totalClasses = classes.length;
+  var classFills = {};
+  classes.forEach(function(c) {
+    var booked = c.TotalBooked || 0;
+    var cap = c.MaxCapacity || 10;
+    totalBooked += booked;
+    totalCapacity += cap;
+    var name = c.ClassDescription ? c.ClassDescription.Name : 'Class';
+    if (!classFills[name]) classFills[name] = { booked: 0, capacity: 0 };
+    classFills[name].booked += booked;
+    classFills[name].capacity += cap;
+  });
+  var avgFill = totalCapacity > 0 ? Math.round((totalBooked / totalCapacity) * 100) : 0;
+
+  $('att-stats').innerHTML =
+    '<div class="stat"><div class="stat-l">Total booked this week</div><div class="stat-v">' + totalBooked + '</div><div class="stat-d">' + totalClasses + ' classes</div></div>' +
+    '<div class="stat"><div class="stat-l">Total capacity</div><div class="stat-v">' + totalCapacity + '</div><div class="stat-d">Across all classes</div></div>' +
+    '<div class="stat"><div class="stat-l">Avg fill rate</div><div class="stat-v">' + avgFill + '%</div><div class="stat-d">This week</div></div>';
+
+  // Fill rates by class type — real data
+  var fillColors = ['#16A34A','#2563EB','#D97706','#DB2777','#7C3AED','#DC2626','#059669','#6366F1'];
+  var fillEntries = Object.entries(classFills).sort(function(a,b) {
+    var pctA = a[1].capacity > 0 ? a[1].booked / a[1].capacity : 0;
+    var pctB = b[1].capacity > 0 ? b[1].booked / b[1].capacity : 0;
+    return pctB - pctA;
+  });
+  $('fill-rates').innerHTML = fillEntries.map(function(entry, i) {
+    var name = entry[0], d = entry[1];
+    var pct = d.capacity > 0 ? Math.round((d.booked / d.capacity) * 100) : 0;
+    var color = fillColors[i % fillColors.length];
+    return '<div class="ab-wrap"><div class="ab-lbl"><span>' + name + '</span><span>' + pct + '%</span></div><div class="ab-track"><div class="ab-fill" style="width:' + pct + '%;background:' + color + ';"></div></div></div>';
+  }).join('');
+
+  // Recent check-ins: show today's classes with bookings
+  var today = new Date().toISOString().split('T')[0];
+  var todayClasses = classes.filter(function(c) { return c.StartDateTime && c.StartDateTime.startsWith(today) && (c.TotalBooked || 0) > 0; });
+  $('ci-count').textContent = todayClasses.reduce(function(a,c) { return a + (c.TotalBooked||0); }, 0) + ' today';
+  if (todayClasses.length > 0) {
+    $('checkins').innerHTML = todayClasses.slice(0, 6).map(function(c, i) {
+      var name = (c.ClassDescription ? c.ClassDescription.Name : 'Class') + ' ' + ft(c.StartDateTime);
+      var staff = c.Staff ? c.Staff.DisplayName : '';
+      return '<div class="row"><div class="av" style="background:' + FILLS[i%5] + ';color:' + COLORS[i%5] + ';">' + (c.TotalBooked||0) + '</div>' +
+        '<div class="ri"><div class="rn">' + name + '</div><div class="rm">' + staff + ' · ' + (c.TotalBooked||0) + '/' + (c.MaxCapacity||'?') + ' booked</div></div>' +
+        '<span class="badge b-g">' + Math.round(((c.TotalBooked||0)/(c.MaxCapacity||1))*100) + '%</span></div>';
+    }).join('');
+  } else {
+    $('checkins').innerHTML = '<div style="text-align:center;padding:20px;color:#9CA3AF;font-size:12px;">No bookings today yet</div>';
+  }
 }
 
 // ─── Webhooks page setup ──────────────────────────────────────────────────────
@@ -3154,6 +3262,7 @@ function renderMasterTrend(studio, kitchen, cur) {
 }
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
+const loaded = {};
 let currentPage = 'master';
 function nav(page, el) {
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));
@@ -3162,6 +3271,8 @@ function nav(page, el) {
   $('page-'+page).classList.add('on');
   $('page-title').textContent = {master:'Palm Sporting Club',dash:'Lagree Studio',analytics:'Studio Analytics',kitchen:'Palm Kitchen',schedule:'Weekly schedule',clients:'Clients',attendance:'Attendance',webhooks:'Live events',emails:'Emails'}[page]||page;
   currentPage = page;
+  // Always reload data when switching tabs
+  loaded[page] = false;
   loadPage(page);
 }
 function loadPage(page) {
