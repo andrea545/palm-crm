@@ -346,6 +346,46 @@ app.get('/api/email/log/:id', requireAuth, (req, res) => {
   res.json(entry);
 });
 
+// Reconstruct email preview from template based on subject line
+app.get('/api/email/preview-template', requireAuth, (req, res) => {
+  const subject = decodeURIComponent(req.query.subject || '');
+  const name = decodeURIComponent(req.query.name || 'there');
+
+  // Match subject to template
+  const templateMap = {
+    'Welcome to Palm Sporting Club': 'welcome',
+    'You crushed your intro pack': 'introPackComplete',
+    'You smashed your intro pack': 'introPackComplete',
+    'your last credit': 'lastCredit',
+    'That was your last credit': 'lastCredit',
+    'don\'t lose your momentum': 'lastCredit',
+    'have you considered a membership': 'membershipUpsell',
+    'You keep coming back': 'membershipUpsell',
+    'Time to talk membership': 'membershipUpsell',
+    'We miss you': 'winBack',
+    'Happy birthday': 'birthday',
+    'You did it': 'firstVisit',
+    'your Lagree journey': 'firstVisit',
+    'Don\'t stop now': 'lastCredit',
+  };
+
+  let templateKey = null;
+  const subjectLower = subject.toLowerCase();
+  for (const [pattern, key] of Object.entries(templateMap)) {
+    if (subjectLower.includes(pattern.toLowerCase())) {
+      templateKey = key;
+      break;
+    }
+  }
+
+  if (!templateKey || !EMAIL_TEMPLATES[templateKey]) {
+    return res.json({ error: 'No matching template found', subject });
+  }
+
+  const tpl = EMAIL_TEMPLATES[templateKey](name);
+  res.json({ ok: true, subject: tpl.subject, html: tpl.html, templateKey });
+});
+
 // SendGrid Activity — pull recent email activity (delivery, opens, clicks)
 app.get('/api/email/activity', requireAuth, async (req, res) => {
   if (!CONFIG.sendgridKey) return res.json({ error: 'SendGrid not configured', messages: [] });
@@ -1743,6 +1783,465 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('[studio-analytics]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// ─── NEW: Client Lifetime Value (CLV) ─────────────────────────────────────────
+app.get('/api/analytics/clv', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const allClients = await fetchAllMBClients(mbToken);
+    const now = new Date();
+
+    // Fetch all sales data (no date limit initially)
+    const allSalesRes = await fetchWithTimeout(`${MB_BASE}/sale/sales?Limit=1000`, {
+      headers: mbHeaders(mbToken)
+    }, 15000);
+    const allSalesData = await allSalesRes.json();
+    const allSales = allSalesData.Sales || [];
+
+    // Helper: get sale total (defensive for field name variants)
+    const getSaleTotal = (sale) => {
+      if (typeof sale.TotalAmountPaid === 'number' && sale.TotalAmountPaid > 0) return sale.TotalAmountPaid;
+      if (typeof sale.totalAmountPaid === 'number' && sale.totalAmountPaid > 0) return sale.totalAmountPaid;
+      if (sale.Payments && sale.Payments.length > 0) {
+        const total = sale.Payments.reduce((sum, p) => sum + (p.Amount || p.AmountPaid || p.amount || 0), 0);
+        if (total > 0) return total;
+      }
+      if (sale.payments && sale.payments.length > 0) {
+        const total = sale.payments.reduce((sum, p) => sum + (p.paymentAmountPaid || p.amountPaid || p.amount || 0), 0);
+        if (total > 0) return total;
+      }
+      if (sale.Items && sale.Items.length > 0) {
+        const total = sale.Items.reduce((sum, item) => sum + (item.Total || item.Price || item.total || item.price || 0), 0);
+        if (total > 0) return total;
+      }
+      if (sale.items && sale.items.length > 0) {
+        const total = sale.items.reduce((sum, item) => sum + (item.amountPaid || item.total || item.price || 0), 0);
+        if (total > 0) return total;
+      }
+      return sale.TotalAmount || sale.Amount || sale.Total || sale.totalAmount || sale.amount || sale.total || 0;
+    };
+
+    const clvByClient = {};
+    for (const client of allClients) {
+      const cid = client.ID;
+      clvByClient[cid] = {
+        id: cid,
+        name: client.FirstName + ' ' + client.LastName,
+        createdAt: client.CreatedDateTime ? new Date(client.CreatedDateTime) : now,
+        totalRevenue: 0,
+        salesCount: 0,
+      };
+    }
+
+    // Aggregate sales by client
+    for (const sale of allSales) {
+      const cid = sale.ClientID;
+      if (clvByClient[cid]) {
+        const amount = getSaleTotal(sale);
+        clvByClient[cid].totalRevenue += amount;
+        clvByClient[cid].salesCount += 1;
+      }
+    }
+
+    // Calculate metrics for each client
+    const clvList = [];
+    let totalCLV = 0;
+    for (const clientData of Object.values(clvByClient)) {
+      const monthsActive = Math.max(1, (now - clientData.createdAt) / (1000 * 60 * 60 * 24 * 30));
+      const arpm = clientData.totalRevenue / monthsActive; // Average Revenue Per Month
+      const avgTenure = allClients.length > 0 ? allClients.reduce((sum, c) => {
+        const cdat = clvByClient[c.ID];
+        return sum + Math.max(1, (now - cdat.createdAt) / (1000 * 60 * 60 * 24 * 30));
+      }, 0) / allClients.length : 12;
+      const clv = arpm * avgTenure;
+      clientData.clv = clv;
+      clientData.arpm = arpm;
+      clientData.monthsActive = Math.round(monthsActive * 10) / 10;
+      clvList.push(clientData);
+      totalCLV += clv;
+    }
+
+    // Sort by CLV descending and get top 10
+    clvList.sort((a, b) => b.clv - a.clv);
+    const topClients = clvList.slice(0, 10);
+
+    // CLV distribution (count by tier)
+    const distribution = {
+      'High (>€500)': clvList.filter(c => c.clv > 500).length,
+      'Medium (€200-€500)': clvList.filter(c => c.clv >= 200 && c.clv <= 500).length,
+      'Low (<€200)': clvList.filter(c => c.clv < 200).length,
+    };
+
+    const avgClv = clvList.length > 0 ? totalCLV / clvList.length : 0;
+
+    res.json({
+      ok: true,
+      topClients,
+      avgClv: Math.round(avgClv * 100) / 100,
+      distribution,
+      totalClv: Math.round(totalCLV * 100) / 100,
+      totalClients: clvList.length,
+    });
+  } catch (err) {
+    console.error('[clv-analytics]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// ─── NEW: Cohort Retention Grid ────────────────────────────────────────────────
+app.get('/api/analytics/cohorts', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const allClients = await fetchAllMBClients(mbToken);
+    const now = new Date();
+
+    // Fetch all visits
+    const visitsRes = await fetchWithTimeout(`${MB_BASE}/class/classvisits?Limit=1000`, {
+      headers: mbHeaders(mbToken)
+    }, 15000);
+    const visitsData = await visitsRes.json();
+    const allVisits = visitsData.ClassVisits || [];
+
+    // Group clients by month created
+    const cohorts = {};
+    for (const client of allClients) {
+      const createdDate = client.CreatedDateTime ? new Date(client.CreatedDateTime) : now;
+      const cohortKey = createdDate.getFullYear() + '-' + String(createdDate.getMonth() + 1).padStart(2, '0');
+      if (!cohorts[cohortKey]) {
+        cohorts[cohortKey] = { month: cohortKey, clients: {} };
+      }
+      cohorts[cohortKey].clients[client.ID] = {
+        id: client.ID,
+        name: client.FirstName + ' ' + client.LastName,
+        createdAt: createdDate,
+        active: [false, false, false, false, false, false, false, false, false, false, false, false], // 0-11 months
+      };
+    }
+
+    // Check visit activity for each client in each month
+    for (const visit of allVisits) {
+      const cid = visit.ClientID;
+      const visitDate = visit.CreatedDateTime ? new Date(visit.CreatedDateTime) : now;
+
+      for (const cohort of Object.values(cohorts)) {
+        const client = cohort.clients[cid];
+        if (!client) continue;
+
+        const monthsSinceCreation = Math.floor((visitDate - client.createdAt) / (1000 * 60 * 60 * 24 * 30));
+        if (monthsSinceCreation >= 0 && monthsSinceCreation < 12) {
+          client.active[monthsSinceCreation] = true;
+        }
+      }
+    }
+
+    // Calculate retention percentages for each cohort
+    const grid = [];
+    for (const [key, cohort] of Object.entries(cohorts)) {
+      const clients = Object.values(cohort.clients);
+      const totalInCohort = clients.length;
+      if (totalInCohort === 0) continue;
+
+      const row = { cohort: key, retention: [] };
+      for (let month = 0; month < 12; month++) {
+        const activeInMonth = clients.filter(c => c.active[month]).length;
+        const pct = totalInCohort > 0 ? Math.round((activeInMonth / totalInCohort) * 100) : 0;
+        row.retention.push(pct);
+      }
+      grid.push(row);
+    }
+
+    // Sort by cohort month descending (newest first)
+    grid.sort((a, b) => b.cohort.localeCompare(a.cohort));
+
+    res.json({
+      ok: true,
+      grid,
+      columns: ['M0', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'M10', 'M11'],
+    });
+  } catch (err) {
+    console.error('[cohort-analytics]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// ─── NEW: Churn Risk Scoring ──────────────────────────────────────────────────
+app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const allClients = await fetchAllMBClients(mbToken);
+    const now = new Date();
+    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const fourWeeksAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+
+    // Fetch all visits
+    const visitsRes = await fetchWithTimeout(`${MB_BASE}/class/classvisits?Limit=2000`, {
+      headers: mbHeaders(mbToken)
+    }, 15000);
+    const visitsData = await visitsRes.json();
+    const allVisits = visitsData.ClassVisits || [];
+
+    const riskScores = [];
+
+    for (const client of allClients) {
+      const cid = client.ID;
+
+      // Get client's visits
+      const clientVisits = allVisits
+        .filter(v => v.ClientID === cid && v.CreatedDateTime)
+        .map(v => ({ date: new Date(v.CreatedDateTime) }))
+        .sort((a, b) => b.date - a.date);
+
+      if (clientVisits.length === 0) continue; // Skip inactive clients
+
+      const lastVisit = clientVisits[0];
+      const daysSinceLastVisit = Math.floor((now - lastVisit.date) / (1000 * 60 * 60 * 24));
+
+      // Recent 2 weeks vs previous 2 weeks
+      const recent = clientVisits.filter(v => v.date > twoWeeksAgo).length;
+      const previous = clientVisits.filter(v => v.date <= twoWeeksAgo && v.date > fourWeeksAgo).length;
+      const frequencyDecline = previous > 0 ? Math.max(0, ((previous - recent) / previous) * 100) : 0;
+
+      // Days since last visit risk
+      let daysSinceRisk = 0;
+      if (daysSinceLastVisit <= 7) daysSinceRisk = 0;
+      else if (daysSinceLastVisit <= 14) daysSinceRisk = 50;
+      else daysSinceRisk = 100;
+
+      // Credits remaining (simplified: assume client info has credits)
+      const creditsRemaining = client.Credits || 0;
+      const creditsRisk = Math.max(0, Math.min(100, (5 - creditsRemaining) * 20)); // 0-5 credits scale
+
+      // Engagement trend (visits in last month vs previous month)
+      const thisMonth = clientVisits.filter(v => v.date > fourWeeksAgo).length;
+      const lastMonth = clientVisits.filter(v => v.date <= fourWeeksAgo && v.date > new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000)).length;
+      const engagementDecline = lastMonth > 0 ? Math.max(0, ((lastMonth - thisMonth) / lastMonth) * 100) : 0;
+
+      // Weighted score
+      const score = (frequencyDecline * 0.4) + (daysSinceRisk * 0.2) + (creditsRisk * 0.25) + (engagementDecline * 0.15);
+
+      const factors = [];
+      if (frequencyDecline > 30) factors.push(`Visit frequency down ${Math.round(frequencyDecline)}%`);
+      if (daysSinceLastVisit > 14) factors.push(`No visit for ${daysSinceLastVisit} days`);
+      if (creditsRemaining <= 2) factors.push(`Only ${creditsRemaining} credits left`);
+      if (engagementDecline > 30) factors.push(`Engagement down ${Math.round(engagementDecline)}%`);
+
+      riskScores.push({
+        id: cid,
+        name: client.FirstName + ' ' + client.LastName,
+        email: client.Email,
+        score: Math.round(score),
+        daysSinceLastVisit,
+        creditsRemaining,
+        visitCount: clientVisits.length,
+        factors: factors.slice(0, 3),
+        recommendedAction: score > 70 ? 'Send win-back offer' : score > 50 ? 'Send personalized re-engagement' : 'Monitor',
+      });
+    }
+
+    riskScores.sort((a, b) => b.score - a.score);
+    const atRisk = riskScores.filter(c => c.score > 50);
+
+    res.json({
+      ok: true,
+      atRiskCount: atRisk.length,
+      allScores: riskScores,
+      highRisk: riskScores.slice(0, 10),
+    });
+  } catch (err) {
+    console.error('[churn-risk]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// ─── NEW: First Visit Conversion Tracking ──────────────────────────────────────
+app.get('/api/analytics/first-visit-conversion', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const allClients = await fetchAllMBClients(mbToken);
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    const visitsRes = await fetchWithTimeout(`${MB_BASE}/class/classvisits?Limit=2000`, {
+      headers: mbHeaders(mbToken)
+    }, 15000);
+    const visitsData = await visitsRes.json();
+    const allVisits = visitsData.ClassVisits || [];
+
+    // Build client visit history (sorted by visit date)
+    const clientVisitMap = {};
+    for (const visit of allVisits) {
+      const cid = visit.ClientID;
+      if (!clientVisitMap[cid]) clientVisitMap[cid] = [];
+      clientVisitMap[cid].push({
+        date: visit.CreatedDateTime ? new Date(visit.CreatedDateTime) : now,
+      });
+    }
+
+    // Sort each client's visits
+    for (const visits of Object.values(clientVisitMap)) {
+      visits.sort((a, b) => a.date - b.date);
+    }
+
+    // Find first-time visitors in windows
+    const windows = [
+      { label: '30 days', since: thirtyDaysAgo },
+      { label: '60 days', since: sixtyDaysAgo },
+      { label: '90 days', since: ninetyDaysAgo },
+    ];
+
+    const results = {};
+    for (const window of windows) {
+      const firstTimeInWindow = [];
+      const returning = [];
+      const noSecondVisit = [];
+
+      for (const client of allClients) {
+        const cid = client.ID;
+        const visits = clientVisitMap[cid] || [];
+        if (visits.length === 0) continue;
+
+        const firstVisit = visits[0];
+        if (firstVisit.date < window.since) continue; // First visit before window
+
+        firstTimeInWindow.push(client);
+        if (visits.length > 1) {
+          const secondVisit = visits[1];
+          // Check if second visit within 48 hours
+          if ((secondVisit.date - firstVisit.date) <= (48 * 60 * 60 * 1000)) {
+            returning.push(client);
+          }
+        } else {
+          noSecondVisit.push(client);
+        }
+      }
+
+      const rate = firstTimeInWindow.length > 0
+        ? Math.round((returning.length / firstTimeInWindow.length) * 100)
+        : 0;
+
+      results[window.label] = {
+        totalFirstTime: firstTimeInWindow.length,
+        returning,
+        conversionRate: rate,
+        noSecondVisit: noSecondVisit.slice(0, 5),
+      };
+    }
+
+    res.json({
+      ok: true,
+      results,
+      alertList: results['30 days'].noSecondVisit,
+    });
+  } catch (err) {
+    console.error('[first-visit-conversion]', err.message);
+    res.status(502).json({ error: err.message, live: false });
+  }
+});
+
+// ─── NEW: No-Show Tracking ────────────────────────────────────────────────────
+app.get('/api/analytics/no-shows', requireAuth, async (req, res) => {
+  try {
+    const mbToken = await getMBToken();
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Fetch classes with bookings
+    const classesRes = await fetchWithTimeout(`${MB_BASE}/class/classes?StartDateTime=${thirtyDaysAgo.toISOString()}&EndDateTime=${now.toISOString()}&Limit=200`, {
+      headers: mbHeaders(mbToken)
+    }, 15000);
+    const classesData = await classesRes.json();
+    const classes = classesData.Classes || [];
+
+    // Fetch visits (check-ins)
+    const visitsRes = await fetchWithTimeout(`${MB_BASE}/class/classvisits?Limit=2000`, {
+      headers: mbHeaders(mbToken)
+    }, 15000);
+    const visitsData = await visitsRes.json();
+    const visits = visitsData.ClassVisits || [];
+
+    const visitMap = {};
+    for (const visit of visits) {
+      visitMap[`${visit.ClassID}:${visit.ClientID}`] = true;
+    }
+
+    // Calculate no-show rate
+    let totalBooked = 0;
+    let totalCheckedIn = 0;
+    const noShowsByClient = {};
+    const noShowsByClass = {};
+    const noShowsByDay = {};
+
+    for (const cls of classes) {
+      const classId = cls.ID;
+      const classDate = cls.StartDateTime ? new Date(cls.StartDateTime) : now;
+      const dayKey = classDate.toISOString().split('T')[0];
+
+      if (!noShowsByDay[dayKey]) noShowsByDay[dayKey] = { booked: 0, checkedIn: 0 };
+      if (!noShowsByClass[classId]) noShowsByClass[classId] = { class: cls.Name || 'Unknown', booked: 0, checkedIn: 0 };
+
+      // Assume bookings in Visits with CheckedIn status
+      const classVisits = visits.filter(v => v.ClassID === classId && v.CreatedDateTime && new Date(v.CreatedDateTime) > thirtyDaysAgo);
+      const checkedIn = classVisits.filter(v => v.CheckedIn === true || v.CheckedInDateTime).length;
+
+      totalBooked += classVisits.length;
+      totalCheckedIn += checkedIn;
+
+      noShowsByDay[dayKey].booked += classVisits.length;
+      noShowsByDay[dayKey].checkedIn += checkedIn;
+      noShowsByClass[classId].booked += classVisits.length;
+      noShowsByClass[classId].checkedIn += checkedIn;
+
+      // Track chronic no-shows
+      for (const visit of classVisits) {
+        const cid = visit.ClientID;
+        if (!visitMap[`${classId}:${cid}`]) {
+          if (!noShowsByClient[cid]) noShowsByClient[cid] = { count: 0, name: visit.ClientName || 'Unknown' };
+          noShowsByClient[cid].count += 1;
+        }
+      }
+    }
+
+    const overallNoShowRate = totalBooked > 0 ? Math.round(((totalBooked - totalCheckedIn) / totalBooked) * 100) : 0;
+
+    const chronicNoShows = Object.entries(noShowsByClient)
+      .filter(([_, data]) => data.count >= 3)
+      .map(([cid, data]) => ({ id: cid, ...data }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    const classesByNoShow = Object.entries(noShowsByClass)
+      .map(([cid, data]) => ({
+        classId: cid,
+        ...data,
+        noShowRate: data.booked > 0 ? Math.round(((data.booked - data.checkedIn) / data.booked) * 100) : 0,
+      }))
+      .sort((a, b) => b.noShowRate - a.noShowRate)
+      .slice(0, 5);
+
+    res.json({
+      ok: true,
+      overallNoShowRate,
+      totalBooked,
+      totalCheckedIn,
+      chronicNoShows,
+      classesByNoShow,
+      noShowsByDay: Object.entries(noShowsByDay)
+        .map(([day, data]) => ({
+          date: day,
+          booked: data.booked,
+          checkedIn: data.checkedIn,
+          noShowRate: data.booked > 0 ? Math.round(((data.booked - data.checkedIn) / data.booked) * 100) : 0,
+        }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 30),
+    });
+  } catch (err) {
+    console.error('[no-shows]', err.message);
     res.status(502).json({ error: err.message, live: false });
   }
 });

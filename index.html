@@ -447,6 +447,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           <div style="font-size:11px;color:#6B7280;margin-bottom:12px;">Personalised insights based on your data</div>
           <div id="an-recommendations"></div>
         </div>
+
+        <!-- PHASE 1: Advanced Analytics ================================================ -->
+        <div style="border-top:1px solid #E5E7EB;padding-top:20px;margin-top:20px;">
+          <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:16px;">📊</span> Advanced Client Analytics
+          </div>
+
+          <!-- CLV Overview -->
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-t">Client Lifetime Value (CLV)</div>
+            <div id="an-clv-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;"></div>
+            <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:8px;">Top 10 Clients by CLV</div>
+            <div id="an-clv-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <!-- Cohort Retention Grid -->
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-t">Cohort Retention Analysis</div>
+            <div style="font-size:11px;color:#6B7280;margin-bottom:12px;font-style:italic;">Rows = acquisition cohort, columns = months since signup. Green = high retention, Red = low.</div>
+            <div id="an-cohort-grid" style="overflow-x:auto;"></div>
+          </div>
+
+          <!-- Churn Risk Dashboard -->
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-t" style="display:flex;justify-content:space-between;align-items:center;">
+              Churn Risk Dashboard
+              <span style="font-size:10px;color:#EF4444;font-weight:600;" id="an-churn-count"></span>
+            </div>
+            <div style="font-size:11px;color:#6B7280;margin-bottom:12px;">Clients at risk of churning (score > 50)</div>
+            <div id="an-churn-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <!-- First Visit Conversion -->
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-t">First Visit Conversion</div>
+            <div id="an-fvc-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px;"></div>
+            <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:8px;">First-time visitors without second visit (30d)</div>
+            <div id="an-fvc-alert" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+
+          <!-- No-Show Tracker -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-t">No-Show Tracking</div>
+            <div id="an-noshows-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px;"></div>
+            <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:8px;">Chronic no-shows (3+ missed classes)</div>
+            <div id="an-noshows-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1387,6 +1435,197 @@ function renderAnalytics(d) {
 
   // ── Recommendations ───────────────────────────────────────────────────────
   renderRecommendations(d);
+
+  // ── Load advanced analytics (Phase 1) ───────────────────────────────────────
+  loadAdvancedAnalytics();
+}
+
+// ─── Load all advanced analytics in parallel ──────────────────────────────────
+async function loadAdvancedAnalytics() {
+  try {
+    // Fetch all 5 new endpoints in parallel
+    const [clvRes, cohortsRes, churnRes, fvcRes, noshowsRes] = await Promise.all([
+      fetch(`${PROXY}/api/analytics/clv`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
+      fetch(`${PROXY}/api/analytics/cohorts`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
+      fetch(`${PROXY}/api/analytics/churn-risk`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
+      fetch(`${PROXY}/api/analytics/first-visit-conversion`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
+      fetch(`${PROXY}/api/analytics/no-shows`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
+    ]);
+
+    const [clvData, cohortsData, churnData, fvcData, noshowsData] = await Promise.all([
+      clvRes.json(), cohortsRes.json(), churnRes.json(), fvcRes.json(), noshowsRes.json()
+    ]);
+
+    renderCLVAnalytics(clvData);
+    renderCohortRetention(cohortsData);
+    renderChurnRisk(churnData);
+    renderFirstVisitConversion(fvcData);
+    renderNoShowTracker(noshowsData);
+  } catch (e) {
+    console.error('Advanced analytics error:', e);
+  }
+}
+
+// ─── Render CLV Overview ───────────────────────────────────────────────────────
+function renderCLVAnalytics(data) {
+  const el = $('an-clv-summary');
+  const list = $('an-clv-list');
+  if (!el || !data.ok) return;
+
+  // Summary cards
+  el.innerHTML = `
+    <div style="padding:10px;background:#F3E8FF;border-radius:8px;">
+      <div style="font-size:9px;color:#5B21B6;text-transform:uppercase;letter-spacing:.5px;">Avg CLV</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">€${Math.round(data.avgClv)}</div>
+    </div>
+    <div style="padding:10px;background:#F0FDF4;border-radius:8px;">
+      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Total Clients</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.totalClients}</div>
+    </div>
+    <div style="padding:10px;background:#FEF3C7;border-radius:8px;">
+      <div style="font-size:9px;color:#92400E;text-transform:uppercase;letter-spacing:.5px;">Total CLV</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">€${Math.round(data.totalClv).toLocaleString()}</div>
+    </div>
+  `;
+
+  // Top 10 clients
+  list.innerHTML = (data.topClients || []).map(c => `
+    <div style="padding:10px;background:#F9FAFB;border-radius:8px;border-left:3px solid #0D3D20;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#111827;">${c.name}</div>
+          <div style="font-size:10px;color:#6B7280;margin-top:2px;">ARPM: €${Math.round(c.arpm)} · ${c.monthsActive}mo</div>
+        </div>
+        <div style="font-size:16px;font-weight:700;color:#0D3D20;">€${Math.round(c.clv)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── Render Cohort Retention Grid ───────────────────────────────────────────────
+function renderCohortRetention(data) {
+  const el = $('an-cohort-grid');
+  if (!el || !data.ok || !data.grid) return;
+
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:10px;font-family:monospace;">';
+  html += '<tr><th style="padding:4px;border:1px solid #E5E7EB;background:#F3F4F6;">Cohort</th>';
+  for (const col of (data.columns || [])) {
+    html += `<th style="padding:4px;border:1px solid #E5E7EB;background:#F3F4F6;text-align:center;font-weight:600;">${col}</th>`;
+  }
+  html += '</tr>';
+
+  for (const row of data.grid) {
+    html += `<tr><td style="padding:4px;border:1px solid #E5E7EB;background:#F9FAFB;font-weight:600;">${row.cohort}</td>`;
+    for (const ret of row.retention) {
+      const color = ret >= 50 ? '#D1FAE5' : ret >= 25 ? '#FEF3C7' : '#FEE2E2';
+      const textColor = ret >= 50 ? '#065F46' : ret >= 25 ? '#78350F' : '#7F1D1D';
+      html += `<td style="padding:4px;border:1px solid #E5E7EB;background:${color};color:${textColor};text-align:center;font-weight:600;">${ret}%</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table>';
+  el.innerHTML = html;
+}
+
+// ─── Render Churn Risk Dashboard ────────────────────────────────────────────────
+function renderChurnRisk(data) {
+  const countEl = $('an-churn-count');
+  const listEl = $('an-churn-list');
+  if (!countEl || !listEl || !data.ok) return;
+
+  countEl.textContent = `${data.atRiskCount || 0} at risk`;
+
+  const list = (data.highRisk || []).slice(0, 8);
+  listEl.innerHTML = list.map(c => `
+    <div style="padding:10px;background:#FEF2F2;border-radius:8px;border-left:3px solid #EF4444;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:12px;font-weight:600;color:#111827;">${c.name}</div>
+        <div style="font-size:13px;font-weight:700;color:#EF4444;">${c.score}%</div>
+      </div>
+      <div style="font-size:10px;color:#7F1D1D;line-height:1.4;">
+        ${(c.factors || []).join(' · ')}
+      </div>
+      <div style="font-size:9px;color:#991B1B;margin-top:4px;font-style:italic;">${c.recommendedAction}</div>
+    </div>
+  `).join('');
+
+  if (list.length === 0) {
+    listEl.innerHTML = '<div style="padding:10px;color:#6B7280;font-size:11px;">No at-risk clients detected ✓</div>';
+  }
+}
+
+// ─── Render First Visit Conversion ──────────────────────────────────────────────
+function renderFirstVisitConversion(data) {
+  const sumEl = $('an-fvc-summary');
+  const alertEl = $('an-fvc-alert');
+  if (!sumEl || !alertEl || !data.ok) return;
+
+  const results = data.results || {};
+  const r30 = results['30 days'] || {};
+
+  sumEl.innerHTML = `
+    <div style="padding:10px;background:#DBEAFE;border-radius:8px;">
+      <div style="font-size:9px;color:#0369A1;text-transform:uppercase;letter-spacing:.5px;">First-time (30d)</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${r30.totalFirstTime || 0}</div>
+    </div>
+    <div style="padding:10px;background:#DCFCE7;border-radius:8px;">
+      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Returned (48h)</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${r30.returning ? r30.returning.length : 0}</div>
+    </div>
+    <div style="padding:10px;background:#F0FDF4;border-radius:8px;">
+      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Conversion Rate</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${r30.conversionRate || 0}%</div>
+    </div>
+  `;
+
+  const alerts = (data.alertList || []).slice(0, 5);
+  alertEl.innerHTML = alerts.map(c => `
+    <div style="padding:10px;background:#FEF9E7;border-radius:8px;border-left:3px solid #D97706;">
+      <div style="font-size:12px;font-weight:600;color:#111827;">${c.FirstName || 'Unknown'} ${c.LastName || ''}</div>
+      <div style="font-size:10px;color:#78350F;margin-top:4px;">First visit but no second visit within 48h — send welcome follow-up</div>
+    </div>
+  `).join('');
+
+  if (alerts.length === 0) {
+    alertEl.innerHTML = '<div style="padding:10px;color:#6B7280;font-size:11px;">Great conversion! No follow-ups needed.</div>';
+  }
+}
+
+// ─── Render No-Show Tracker ────────────────────────────────────────────────────
+function renderNoShowTracker(data) {
+  const sumEl = $('an-noshows-summary');
+  const listEl = $('an-noshows-list');
+  if (!sumEl || !listEl || !data.ok) return;
+
+  sumEl.innerHTML = `
+    <div style="padding:10px;background:#FEE2E2;border-radius:8px;">
+      <div style="font-size:9px;color:#7F1D1D;text-transform:uppercase;letter-spacing:.5px;">No-show Rate</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.overallNoShowRate || 0}%</div>
+    </div>
+    <div style="padding:10px;background:#DBEAFE;border-radius:8px;">
+      <div style="font-size:9px;color:#0369A1;text-transform:uppercase;letter-spacing:.5px;">Total Booked</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.totalBooked || 0}</div>
+    </div>
+    <div style="padding:10px;background:#DCFCE7;border-radius:8px;">
+      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Checked In</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.totalCheckedIn || 0}</div>
+    </div>
+  `;
+
+  const chronic = (data.chronicNoShows || []).slice(0, 6);
+  listEl.innerHTML = chronic.map(c => `
+    <div style="padding:10px;background:#FEF2F2;border-radius:8px;border-left:3px solid #EF4444;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:12px;font-weight:600;color:#111827;">${c.name || 'Unknown'}</div>
+        <div style="font-size:13px;font-weight:700;color:#EF4444;">${c.count} no-shows</div>
+      </div>
+      <div style="font-size:10px;color:#7F1D1D;margin-top:4px;">Send reminder or require payment for bookings</div>
+    </div>
+  `).join('');
+
+  if (chronic.length === 0) {
+    listEl.innerHTML = '<div style="padding:10px;color:#6B7280;font-size:11px;">No chronic no-shows detected.</div>';
+  }
 }
 
 // ─── Studio trend + forecast chart ───────────────────────────────────────────
@@ -2290,8 +2529,9 @@ function renderEmailLog(emails, append) {
     const triggerLabel = e.trigger === 'manual' ? 'Manual send' : (isSg ? `Auto: ${cat}` : `Auto: ${e.trigger || cat}`);
     // Show opens/clicks
     const engagementHtml = (eOpens || eClicks) ? `<span style="color:#16A34A;font-size:11px;">&#128065; ${eOpens}</span> <span style="color:#2563EB;font-size:11px;">&#128279; ${eClicks}</span>` : '';
-    const clickHandler = isSg ? '' : `onclick="openEmailPreview('${e.id}')"`;
-    const cursorStyle = isSg ? 'cursor:default;' : 'cursor:pointer;';
+    // All emails now clickable: local emails use log ID, SG emails use template reconstruction
+    const clickHandler = isSg ? `onclick="openEmailPreviewFromTemplate('${encodeURIComponent(e.subject||'')}', '${encodeURIComponent(eToName||eTo||'')}')"` : `onclick="openEmailPreview('${e.id}')"`;
+    const cursorStyle = 'cursor:pointer;';
     return `<div class="ei" ${clickHandler} style="${cursorStyle}transition:background 0.15s;" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background=''">
       <div class="ei-ico" style="background:${bg};font-size:18px;">${icon}</div>
       <div style="flex:1;min-width:0;">
@@ -2307,7 +2547,7 @@ function renderEmailLog(emails, append) {
           <span class="badge" style="font-size:10px;background:${bg};color:#374151;">${label}</span>
         </div>
       </div>
-      ${isSg ? '' : '<div style="font-size:18px;color:#D1D5DB;">&#8250;</div>'}
+      <div style="font-size:18px;color:#D1D5DB;">&#8250;</div>
     </div>`;
   }).join('');
   if (append) {
@@ -2390,13 +2630,45 @@ async function openEmailPreview(id) {
     $('email-preview-modal').style.display = 'flex';
   } catch(e) { console.error('Preview error:', e); }
 }
+async function openEmailPreviewFromTemplate(encodedSubject, encodedName) {
+  try {
+    const subject = decodeURIComponent(encodedSubject);
+    const name = decodeURIComponent(encodedName);
+    // Call new backend endpoint to reconstruct preview from template
+    const res = await fetch(`${PROXY}/api/email/preview-template?subject=${encodedSubject}&name=${encodedName}`, { headers: { 'x-session-token': token } });
+    const data = await res.json();
+    // Store that this is a template reconstruction (not a real email with resend capability)
+    currentPreviewEmail = { isTemplate: true, subject, name, ...data };
+    if (data.error) {
+      // Fallback: show a simple message
+      $('epm-subject').textContent = subject;
+      $('epm-meta').textContent = `To: ${name}`;
+      $('epm-iframe').srcdoc = '<p style="padding:20px;color:#6B7280;font-family:Georgia,serif;">Email preview not available for this email. Future emails will have previews stored automatically.</p>';
+      $('epm-resend').style.display = 'none';
+      $('email-preview-modal').style.display = 'flex';
+      return;
+    }
+    $('epm-subject').textContent = data.subject || subject;
+    $('epm-meta').textContent = `To: ${name} · Reconstructed from template`;
+    $('epm-iframe').srcdoc = data.html || '<p style="padding:20px;color:#6B7280;">No preview available</p>';
+    $('epm-resend').style.display = 'none';
+    $('email-preview-modal').style.display = 'flex';
+  } catch(e) { console.error('Template preview error:', e); }
+}
 function closeEmailPreview() {
   $('email-preview-modal').style.display = 'none';
   currentPreviewEmail = null;
+  // Reset resend button visibility for next email
+  $('epm-resend').style.display = 'block';
 }
 async function resendFromPreview() {
   if (!currentPreviewEmail) return;
   const e = currentPreviewEmail;
+  // Don't allow resend for template-reconstructed emails
+  if (e.isTemplate) {
+    alert('This is a reconstructed email preview. Original emails can only be resent if stored in history.');
+    return;
+  }
   $('epm-resend').textContent = 'Sending...';
   $('epm-resend').disabled = true;
   try {
