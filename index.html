@@ -450,8 +450,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
         <!-- PHASE 1: Advanced Analytics ================================================ -->
         <div style="border-top:1px solid #E5E7EB;padding-top:20px;margin-top:20px;">
-          <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
-            <span style="font-size:16px;">📊</span> Advanced Client Analytics
+          <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:16px;display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <span style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">📊</span> Advanced Client Analytics</span>
+            <button class="btn btn-g" onclick="loadAdvancedAnalytics();this.textContent='Loading...';this.disabled=true;" id="btn-load-advanced" style="font-size:11px;padding:5px 14px;">Load Advanced Analytics</button>
           </div>
 
           <!-- CLV Overview -->
@@ -487,12 +488,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
             <div id="an-fvc-alert" style="display:flex;flex-direction:column;gap:8px;"></div>
           </div>
 
-          <!-- No-Show Tracker -->
+          <!-- Class Utilization -->
           <div class="card" style="margin-bottom:16px;">
-            <div class="card-t">No-Show Tracking</div>
+            <div class="card-t">Class Utilization (Last 30 Days)</div>
             <div id="an-noshows-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px;"></div>
-            <div style="font-size:11px;font-weight:600;color:#6B7280;margin-bottom:8px;">Chronic no-shows (3+ missed classes)</div>
-            <div id="an-noshows-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+            <div id="an-util-sections" style="display:flex;flex-direction:column;gap:12px;">
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#DC2626;margin-bottom:8px;">Underperforming Classes (below 50% fill)</div>
+                <div id="an-noshows-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#16A34A;margin-bottom:8px;">High-Demand Classes (90%+ fill)</div>
+                <div id="an-highdemand-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1436,33 +1445,41 @@ function renderAnalytics(d) {
   // ── Recommendations ───────────────────────────────────────────────────────
   renderRecommendations(d);
 
-  // ── Load advanced analytics (Phase 1) ───────────────────────────────────────
-  loadAdvancedAnalytics();
+  // ── Advanced analytics loaded on demand (button click) to avoid overloading MindBody API
 }
 
-// ─── Load all advanced analytics in parallel ──────────────────────────────────
+// ─── Load all advanced analytics sequentially (to avoid overloading MB API) ──
 async function loadAdvancedAnalytics() {
+  const btn = $('btn-load-advanced');
+  const timeoutMs = 20000;
+  const fetchWithTO = (url) => {
+    const ctrl = new AbortController();
+    const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+    return fetch(url, { headers: { 'x-session-token': token }, signal: ctrl.signal })
+      .then(r => { clearTimeout(tid); return r.json(); })
+      .catch(e => ({ error: e.message }));
+  };
   try {
-    // Fetch all 5 new endpoints in parallel
-    const [clvRes, cohortsRes, churnRes, fvcRes, noshowsRes] = await Promise.all([
-      fetch(`${PROXY}/api/analytics/clv`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
-      fetch(`${PROXY}/api/analytics/cohorts`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
-      fetch(`${PROXY}/api/analytics/churn-risk`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
-      fetch(`${PROXY}/api/analytics/first-visit-conversion`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
-      fetch(`${PROXY}/api/analytics/no-shows`, { headers: { 'x-session-token': token } }).catch(e => ({ json: () => ({ error: e.message }) })),
-    ]);
-
-    const [clvData, cohortsData, churnData, fvcData, noshowsData] = await Promise.all([
-      clvRes.json(), cohortsRes.json(), churnRes.json(), fvcRes.json(), noshowsRes.json()
-    ]);
-
+    // Load sequentially to avoid overloading MindBody API
+    const clvData = await fetchWithTO(`${PROXY}/api/analytics/clv`);
     renderCLVAnalytics(clvData);
+
+    const cohortsData = await fetchWithTO(`${PROXY}/api/analytics/cohorts`);
     renderCohortRetention(cohortsData);
+
+    const churnData = await fetchWithTO(`${PROXY}/api/analytics/churn-risk`);
     renderChurnRisk(churnData);
+
+    const fvcData = await fetchWithTO(`${PROXY}/api/analytics/first-visit-conversion`);
     renderFirstVisitConversion(fvcData);
+
+    const noshowsData = await fetchWithTO(`${PROXY}/api/analytics/no-shows`);
     renderNoShowTracker(noshowsData);
+
+    if (btn) { btn.textContent = 'Loaded ✓'; btn.style.background = '#16A34A'; }
   } catch (e) {
     console.error('Advanced analytics error:', e);
+    if (btn) { btn.textContent = 'Retry'; btn.disabled = false; btn.style.background = ''; }
   }
 }
 
@@ -1570,7 +1587,7 @@ function renderFirstVisitConversion(data) {
     </div>
     <div style="padding:10px;background:#DCFCE7;border-radius:8px;">
       <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Returned (48h)</div>
-      <div style="font-size:18px;font-weight:700;color:#111827;">${r30.returning ? r30.returning.length : 0}</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${r30.convertedCount || 0}</div>
     </div>
     <div style="padding:10px;background:#F0FDF4;border-radius:8px;">
       <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Conversion Rate</div>
@@ -1591,40 +1608,71 @@ function renderFirstVisitConversion(data) {
   }
 }
 
-// ─── Render No-Show Tracker ────────────────────────────────────────────────────
+// ─── Render Class Utilization (was No-Show Tracker) ────────────────────────────
 function renderNoShowTracker(data) {
   const sumEl = $('an-noshows-summary');
   const listEl = $('an-noshows-list');
+  const hdEl = $('an-highdemand-list');
   if (!sumEl || !listEl || !data.ok) return;
 
+  const fillColor = data.overallFillRate >= 70 ? '#16A34A' : data.overallFillRate >= 50 ? '#D97706' : '#DC2626';
+  const fillBg = data.overallFillRate >= 70 ? '#DCFCE7' : data.overallFillRate >= 50 ? '#FFF7ED' : '#FEE2E2';
+
   sumEl.innerHTML = `
-    <div style="padding:10px;background:#FEE2E2;border-radius:8px;">
-      <div style="font-size:9px;color:#7F1D1D;text-transform:uppercase;letter-spacing:.5px;">No-show Rate</div>
-      <div style="font-size:18px;font-weight:700;color:#111827;">${data.overallNoShowRate || 0}%</div>
+    <div style="padding:10px;background:${fillBg};border-radius:8px;">
+      <div style="font-size:9px;color:${fillColor};text-transform:uppercase;letter-spacing:.5px;">Fill Rate</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.overallFillRate || 0}%</div>
     </div>
     <div style="padding:10px;background:#DBEAFE;border-radius:8px;">
       <div style="font-size:9px;color:#0369A1;text-transform:uppercase;letter-spacing:.5px;">Total Booked</div>
       <div style="font-size:18px;font-weight:700;color:#111827;">${data.totalBooked || 0}</div>
     </div>
-    <div style="padding:10px;background:#DCFCE7;border-radius:8px;">
-      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Checked In</div>
-      <div style="font-size:18px;font-weight:700;color:#111827;">${data.totalCheckedIn || 0}</div>
+    <div style="padding:10px;background:#F3F4F6;border-radius:8px;">
+      <div style="font-size:9px;color:#374151;text-transform:uppercase;letter-spacing:.5px;">Total Capacity</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.totalCapacity || 0}</div>
+    </div>
+    <div style="padding:10px;background:#FEF3C7;border-radius:8px;">
+      <div style="font-size:9px;color:#92400E;text-transform:uppercase;letter-spacing:.5px;">Empty Slots</div>
+      <div style="font-size:18px;font-weight:700;color:#111827;">${data.emptySlots || 0}</div>
     </div>
   `;
 
-  const chronic = (data.chronicNoShows || []).slice(0, 6);
-  listEl.innerHTML = chronic.map(c => `
+  // Underperforming classes
+  const under = (data.underperformingClasses || []).slice(0, 5);
+  listEl.innerHTML = under.map(c => `
     <div style="padding:10px;background:#FEF2F2;border-radius:8px;border-left:3px solid #EF4444;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:12px;font-weight:600;color:#111827;">${c.name || 'Unknown'}</div>
-        <div style="font-size:13px;font-weight:700;color:#EF4444;">${c.count} no-shows</div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#111827;">${c.class}</div>
+          <div style="font-size:10px;color:#6B7280;">${c.staff} &middot; ${c.count} classes &middot; avg ${c.avgPerClass}/class</div>
+        </div>
+        <div style="font-size:13px;font-weight:700;color:#EF4444;">${c.fillRate}%</div>
       </div>
-      <div style="font-size:10px;color:#7F1D1D;margin-top:4px;">Send reminder or require payment for bookings</div>
+      <div style="font-size:10px;color:#7F1D1D;margin-top:4px;">Consider adjusting schedule, time slot, or running a promo</div>
     </div>
   `).join('');
+  if (under.length === 0) {
+    listEl.innerHTML = '<div style="padding:10px;color:#6B7280;font-size:11px;">All classes above 50% fill — great job!</div>';
+  }
 
-  if (chronic.length === 0) {
-    listEl.innerHTML = '<div style="padding:10px;color:#6B7280;font-size:11px;">No chronic no-shows detected.</div>';
+  // High-demand classes
+  if (hdEl) {
+    const high = (data.highDemandClasses || []).slice(0, 5);
+    hdEl.innerHTML = high.map(c => `
+      <div style="padding:10px;background:#F0FDF4;border-radius:8px;border-left:3px solid #16A34A;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#111827;">${c.class}</div>
+            <div style="font-size:10px;color:#6B7280;">${c.staff} &middot; ${c.count} classes &middot; avg ${c.avgPerClass}/class</div>
+          </div>
+          <div style="font-size:13px;font-weight:700;color:#16A34A;">${c.fillRate}%</div>
+        </div>
+        <div style="font-size:10px;color:#166534;margin-top:4px;">Consider adding more sessions or waitlist</div>
+      </div>
+    `).join('');
+    if (high.length === 0) {
+      hdEl.innerHTML = '<div style="padding:10px;color:#6B7280;font-size:11px;">No classes at 90%+ fill rate yet.</div>';
+    }
   }
 }
 
@@ -2530,7 +2578,20 @@ function renderEmailLog(emails, append) {
     // Show opens/clicks
     const engagementHtml = (eOpens || eClicks) ? `<span style="color:#16A34A;font-size:11px;">&#128065; ${eOpens}</span> <span style="color:#2563EB;font-size:11px;">&#128279; ${eClicks}</span>` : '';
     // All emails now clickable: local emails use log ID, SG emails use template reconstruction
-    const clickHandler = isSg ? `onclick="openEmailPreviewFromTemplate('${encodeURIComponent(e.subject||'')}', '${encodeURIComponent(eToName||eTo||'')}')"` : `onclick="openEmailPreview('${e.id}')"`;
+    // Try to extract name from subject (e.g. "Welcome to Palm Sporting Club, Meriem!" → "Meriem")
+    let sgName = eToName;
+    if (isSg && (!sgName || sgName === eTo)) {
+      const subj = e.subject || '';
+      const commaMatch = subj.match(/,\s*([A-Z][a-zA-Zéèêëàâäùûüôöîïçñ\-]+)/);
+      const nameInSubj = commaMatch ? commaMatch[1].replace(/[!?.]+$/, '') : '';
+      if (nameInSubj) sgName = nameInSubj;
+      else {
+        // Try patterns like "We miss you, Name" or "Happy birthday, Name"
+        const dashMatch = subj.match(/(?:you|birthday|Hi|Hey),?\s+([A-Z][a-zA-Zéèêëàâäùûüôöîïçñ\-]+)/);
+        sgName = dashMatch ? dashMatch[1].replace(/[!?.]+$/, '') : 'there';
+      }
+    }
+    const clickHandler = isSg ? `onclick="openEmailPreviewFromTemplate('${encodeURIComponent(e.subject||'')}', '${encodeURIComponent(sgName||'there')}')"` : `onclick="openEmailPreview('${e.id}')"`;
     const cursorStyle = 'cursor:pointer;';
     return `<div class="ei" ${clickHandler} style="${cursorStyle}transition:background 0.15s;" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background=''">
       <div class="ei-ico" style="background:${bg};font-size:18px;">${icon}</div>
