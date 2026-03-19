@@ -1337,9 +1337,9 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
       safeFetch(`${MB_BASE}/client/clientservices?Limit=200`, 'memberships'),
     ]);
 
-    const currClasses = currClassesData.Classes || [];
+    const currClasses = (currClassesData.Classes || []).filter(c => !c.IsCanceled);
     const currSales = currSalesData.Sales || [];
-    const prevClasses = prevClassesData.Classes || [];
+    const prevClasses = (prevClassesData.Classes || []).filter(c => !c.IsCanceled);
     const prevSales = prevSalesData.Sales || [];
     // ClientServices can serve as membership proxy — active services with recurring payments
     const memberships = membershipData.ClientServices || [];
@@ -2146,7 +2146,8 @@ app.get('/api/analytics/no-shows', requireAuth, async (req, res) => {
       { headers: mbHeaders(mbToken) }, 15000
     );
     const classesData = await classesRes.json();
-    const classes = classesData.Classes || [];
+    // Filter out cancelled classes and classes with 0 bookings (inactive/old classes still in system)
+    const classes = (classesData.Classes || []).filter(c => !c.IsCanceled && (c.TotalBooked || 0) > 0);
 
     let totalBooked = 0;
     let totalCapacity = 0;
