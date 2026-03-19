@@ -227,14 +227,17 @@ app.all('/api/mb/*', requireAuth, async (req, res) => {
     res.status(502).json({ error: err.message });
   }
 });
-// ─── Email Log (persisted to file so it survives redeploys) ─────────────────
-const EMAIL_LOG_FILE = path.join(__dirname, '.email-log.json');
+// ─── Email Log (persisted to Railway volume so it survives redeploys) ────────
+const DATA_DIR = process.env.DATA_DIR || '/data';
+// Ensure data directory exists (Railway volume mount point)
+try { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) { console.warn('[email] Could not create data dir, falling back to local:', e.message); }
+const EMAIL_LOG_FILE = fs.existsSync(DATA_DIR) ? path.join(DATA_DIR, '.email-log.json') : path.join(__dirname, '.email-log.json');
 let emailLog = [];
 // Load existing log on startup
 try {
   if (fs.existsSync(EMAIL_LOG_FILE)) {
     emailLog = JSON.parse(fs.readFileSync(EMAIL_LOG_FILE, 'utf8'));
-    console.log(`[email] Loaded ${emailLog.length} log entries from disk`);
+    console.log(`[email] Loaded ${emailLog.length} log entries from disk (${EMAIL_LOG_FILE})`);
   }
 } catch (e) { console.error('[email] Failed to load log:', e.message); }
 // Save log to disk (debounced)
