@@ -1378,22 +1378,22 @@ function renderAnalytics(d) {
     <div style="padding:10px;background:#FFFBEB;border-radius:10px;">
       <div style="font-size:10px;color:#92400E;text-transform:uppercase;letter-spacing:.5px;">Total Revenue</div>
       <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${cur}${fmt(d.totalRevenue||0)}</div>
-      ${gPill(d.revGrowth)}
+      ${gPill(d.revenueGrowth)}
     </div>
     <div style="padding:10px;background:#F0FDF4;border-radius:10px;">
       <div style="font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Total Classes</div>
-      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.classesThisMonth||0}</div>
-      ${gPill(d.classesGrowth)}
+      <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.totalClasses||0}</div>
+      ${gPill(d.salesCountGrowth)}
     </div>
     <div style="padding:10px;background:#F9FAFB;border-radius:10px;">
       <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Avg Fill Rate</div>
       <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.avgFillRate||0}%</div>
-      ${gPill(d.fillGrowth)}
+      ${gPill(d.fillRateGrowth)}
     </div>
     <div style="padding:10px;background:#F9FAFB;border-radius:10px;">
       <div style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.5px;">Active Members</div>
       <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.activeClients||0}</div>
-      ${gPill(d.membersGrowth)}
+      ${gPill(d.membershipGrowth)}
     </div>`;
 
   // ── Attendance Summary Row (4 cards) ────────────────────────────────────────
@@ -1408,11 +1408,11 @@ function renderAnalytics(d) {
       <div style="padding:10px;background:#DBEAFE;border-radius:10px;">
         <div style="font-size:10px;color:#0369A1;text-transform:uppercase;letter-spacing:.5px;">Total Bookings</div>
         <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.totalBooked||0}</div>
-        ${gPill(d.bookingsGrowth)}
+        ${gPill(d.visitsGrowth)}
       </div>
       <div style="padding:10px;background:#F3E8FF;border-radius:10px;">
         <div style="font-size:10px;color:#5B21B6;text-transform:uppercase;letter-spacing:.5px;">New Clients</div>
-        <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.newThisMonth||0}</div>
+        <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.newClients||0}</div>
         ${gPill(d.newClientsGrowth)}
       </div>
       <div style="padding:10px;background:#F0FDF4;border-radius:10px;">
@@ -1679,7 +1679,18 @@ function renderNoShowTracker(data) {
 
 // ─── Studio trend + forecast chart ───────────────────────────────────────────
 function renderAnTrend(d, cur) {
-  const daily = d.dailyRevenue || d.weeklyRevenue || buildWeeklyRevenue(d);
+  const monthN2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const raw = d.dailyRevenue || d.weeklyRevenue || buildWeeklyRevenue(d);
+  // Normalize: backend sends {date, revenue} but chart expects {label, amount}
+  const daily = (raw || []).map(r => {
+    if (!r.label && r.date) {
+      const dt = new Date(r.date + 'T12:00:00');
+      r.label = monthN2[dt.getMonth()] + ' ' + dt.getDate();
+    }
+    if (r.revenue != null && r.amount == null) r.amount = r.revenue;
+    if (r.amount == null) r.amount = 0;
+    return r;
+  });
   if (!daily.length) {
     $('an-trend-chart').innerHTML = '<div style="color:#9CA3AF;font-size:12px;padding:20px;">No trend data available</div>';
     $('an-trend-labels').innerHTML = '';
@@ -1739,7 +1750,14 @@ function renderAnTrend(d, cur) {
 function renderAttendanceChart(d, cur) {
   const el = document.getElementById('an-attendance-chart');
   if (!el) return;
-  const chart = d.dailyAttendance || [];
+  const monthN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const chart = (d.dailyAttendance || []).map(c => {
+    if (!c.label && c.date) {
+      const dt = new Date(c.date + 'T12:00:00');
+      c.label = monthN[dt.getMonth()] + ' ' + dt.getDate();
+    }
+    return c;
+  });
   if (!chart.length) {
     el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No attendance data</div>';
     return;
@@ -1761,31 +1779,32 @@ function renderAttendanceChart(d, cur) {
 function renderStudioClasses(d, cur) {
   const el = document.getElementById('an-top-classes');
   if (!el) return;
-  const classes = d.classes || [];
+  const classes = d.classesByName || d.classes || [];
   const comp = d.compLabel || 'vs prior period';
   if (!classes.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No class data</div>'; return; }
 
   el.innerHTML = classes.map(function(cls, idx) {
-    const fillRate = cls.capacity ? Math.round((cls.booked / cls.capacity) * 100) : 0;
-    const gCls = (cls.fillGrowth || 0) > 0 ? 'color:#0D3D20' : (cls.fillGrowth || 0) < 0 ? 'color:#DC2626' : 'color:#6B7280';
-    const gSign = (cls.fillGrowth || 0) > 0 ? '+' : '';
+    const fillRate = cls.avgFill || 0;
+    const totalBooked = cls.totalBooked || 0;
+    const sessions = cls.count || cls.sessions || 0;
+    const avgPerSession = cls.avgBooked || 0;
 
     return '<div class="item-row" style="margin-bottom:2px;">' +
       '<div onclick="this.parentElement.querySelector(\'.class-sessions\').classList.toggle(\'open\')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 8px;cursor:pointer;border-bottom:1px solid #F3F4F6;">' +
         '<div style="display:flex;align-items:center;gap:8px;">' +
           '<span style="font-size:10px;color:#9CA3AF;">&#9660;</span>' +
           '<span style="font-weight:600;font-size:13px;">' + cls.name + '</span>' +
-          '<span style="font-size:11px;color:#9CA3AF;">' + (cls.sessions || 0) + ' sessions</span>' +
+          '<span style="font-size:11px;color:#9CA3AF;">' + sessions + ' sessions</span>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:12px;">' +
           '<div style="width:80px;height:6px;background:#F3F4F6;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#0D3D20;width:' + fillRate + '%;border-radius:3px;"></div></div>' +
           '<span style="font-weight:600;font-size:13px;width:50px;text-align:right;">' + fillRate + '%</span>' +
-          '<span style="font-size:11px;width:70px;text-align:right;' + gCls + ';" title="' + gSign + cls.fillGrowth + '% ' + comp + '">' + gSign + (cls.fillGrowth||0) + '%</span>' +
-          '<span style="font-size:11px;width:60px;text-align:right;color:#6B7280;">' + cls.booked + '/' + cls.capacity + ' booked</span>' +
+          '<span style="font-size:11px;width:70px;text-align:right;color:#6B7280;">avg ' + avgPerSession + '/class</span>' +
+          '<span style="font-size:11px;width:80px;text-align:right;color:#6B7280;">' + totalBooked + ' booked</span>' +
         '</div>' +
       '</div>' +
       '<div class="class-sessions" style="max-height:0;overflow:hidden;transition:max-height .3s ease;font-size:12px;color:#6B7280;">' +
-        '<div style="padding:8px 16px;border-bottom:1px solid #F3F4F6;">Schedule: ' + (cls.schedule || 'Various times') + '</div>' +
+        '<div style="padding:8px 16px;border-bottom:1px solid #F3F4F6;">' + sessions + ' sessions · avg ' + avgPerSession + ' students per class</div>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -1802,22 +1821,22 @@ function renderStudioClasses(d, cur) {
 function renderStudioInstructors(d, cur) {
   const el = document.getElementById('an-instructors');
   if (!el) return;
-  const instructors = d.instructors || [];
+  const instructors = d.instructorStats || d.instructors || [];
   const comp = d.compLabel || 'vs prior period';
   if (!instructors.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No instructor data</div>'; return; }
-  const maxBookings = Math.max.apply(null, instructors.map(i => i.bookings || 0)) || 1;
+  const maxBookings = Math.max.apply(null, instructors.map(i => i.totalBooked || i.bookings || 0)) || 1;
 
   el.innerHTML = instructors.map(function(inst, idx) {
-    const pct = Math.round((inst.bookings / maxBookings) * 100);
-    const gCls = (inst.growth || 0) > 0 ? 'color:#0D3D20' : (inst.growth || 0) < 0 ? 'color:#DC2626' : 'color:#6B7280';
-    const gSign = (inst.growth || 0) > 0 ? '+' : '';
+    const bookings = inst.totalBooked || inst.bookings || 0;
+    const pct = Math.round((bookings / maxBookings) * 100);
+    const fill = inst.avgFill || 0;
     return '<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #F3F4F6;">' +
       '<div style="width:20px;font-size:11px;color:#9CA3AF;text-align:center;">' + (idx+1) + '</div>' +
       '<div style="flex:1;"><div style="font-size:13px;font-weight:500;">' + inst.name + '</div>' +
         '<div style="height:4px;background:#F3F4F6;border-radius:2px;margin-top:4px;"><div style="height:100%;background:#0D3D20;width:' + pct + '%;border-radius:2px;"></div></div></div>' +
       '<div style="width:80px;text-align:right;font-size:12px;color:#6B7280;">' + (inst.classes || 0) + ' classes</div>' +
-      '<div style="width:80px;text-align:right;font-size:13px;font-weight:600;">' + (inst.bookings || 0) + ' bookings</div>' +
-      '<div style="width:60px;text-align:right;font-size:11px;' + gCls + ';" title="' + gSign + (inst.growth||0) + '% ' + comp + '">' + gSign + (inst.growth||0) + '%</div>' +
+      '<div style="width:80px;text-align:right;font-size:13px;font-weight:600;">' + bookings + ' booked</div>' +
+      '<div style="width:60px;text-align:right;font-size:11px;color:#6B7280;">' + fill + '% fill</div>' +
     '</div>';
   }).join('');
 }
@@ -1830,8 +1849,8 @@ function renderClientHealth(d, cur, compLabel) {
   const retColor = ret >= 80 ? '#0D3D20' : ret >= 65 ? '#D97706' : '#DC2626';
   const circumference = 2 * Math.PI * 34;
   const offset = circumference - (ret / 100) * circumference;
-  const newClients = d.newThisMonth || 0;
-  const returning = (d.totalBooked || 0) - newClients;
+  const newClientsCount = d.newClients || 0;
+  const returning = (d.totalBooked || 0) - newClientsCount;
 
   el.innerHTML = `
     <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:14px;">
@@ -1855,17 +1874,18 @@ function renderClientHealth(d, cur, compLabel) {
     <div style="display:flex;gap:12px;margin-bottom:14px;">
       <div style="flex:1;padding:12px;background:#F0FDF4;border-radius:8px;">
         <div style="font-size:11px;color:#166534;font-weight:600;">New Clients</div>
-        <div style="font-size:18px;font-weight:700;color:#166534;">${newClients}</div>
+        <div style="font-size:18px;font-weight:700;color:#166534;">${newClientsCount}</div>
       </div>
       <div style="flex:1;padding:12px;background:#DBEAFE;border-radius:8px;">
         <div style="font-size:11px;color:#0369A1;font-weight:600;">Returning</div>
         <div style="font-size:18px;font-weight:700;color:#0369A1;">${Math.max(0, returning)}</div>
       </div>
     </div>
-    <div style="font-weight:600;font-size:12px;margin-bottom:8px;">At-Risk Clients (${d.atRiskCount||0})</div>
+    <div style="font-weight:600;font-size:12px;margin-bottom:8px;">At-Risk Clients (${(d.atRiskClients||[]).length})</div>
     <div style="max-height:200px;overflow-y:auto;">
       ${(d.atRiskClients||[]).length ? (d.atRiskClients||[]).map(c => {
-        const daysAgo = c.lastSeen ? Math.floor((Date.now() - new Date(c.lastSeen).getTime()) / (24*60*60*1000)) : '?';
+        const lastDate = c.lastVisit || c.lastSeen;
+        const daysAgo = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / (24*60*60*1000)) : '?';
         const severity = daysAgo > 21 ? 'b-r' : daysAgo > 14 ? 'b-a' : 'b-b';
         return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #F3F4F6;font-size:11px;">' +
           '<div style="width:24px;height:24px;background:#FEE2E2;border-radius:50%;color:#991B1B;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;">' + c.name.split(' ').map(x=>x[0]).join('') + '</div>' +
@@ -1880,16 +1900,17 @@ function renderClientHealth(d, cur, compLabel) {
 function renderRevenueByService(d, cur) {
   const el = document.getElementById('an-revenue-service');
   if (!el) return;
-  const services = d.serviceRevenue || [];
+  const services = d.revenueBySvc || d.serviceRevenue || [];
   if (!services.length) { el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No service data</div>'; return; }
-  const total = services.reduce((a,s) => a + (s.amount||0), 0) || 1;
+  const total = services.reduce((a,s) => a + (s.revenue || s.amount || 0), 0) || 1;
 
   el.innerHTML = services.map(s => {
-    const pct = Math.round((s.amount / total) * 100);
+    const amt = s.revenue || s.amount || 0;
+    const pct = Math.round((amt / total) * 100);
     return '<div style="margin-bottom:12px;">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
         '<span style="font-size:12px;font-weight:500;">' + s.name + '</span>' +
-        '<span style="font-size:12px;font-weight:600;">' + cur + (s.amount||0).toFixed(0) + ' (' + pct + '%)</span>' +
+        '<span style="font-size:12px;font-weight:600;">' + cur + Math.round(amt) + ' (' + pct + '%)</span>' +
       '</div>' +
       '<div style="height:6px;background:#F3F4F6;border-radius:3px;overflow:hidden;"><div style="height:100%;background:#0D3D20;width:' + pct + '%;border-radius:3px;"></div></div>' +
     '</div>';
@@ -1900,9 +1921,25 @@ function renderRevenueByService(d, cur) {
 function renderStudioHeatmap(d) {
   const el = document.getElementById('an-heatmap');
   if (!el) return;
-  const heatmap = d.bookingHeatmap || [];
+
+  // Normalize heatmap: backend may send nested object { "Monday": {7:5} } or flat array [{day,hour,count}]
+  let heatmap = [];
+  const raw = d.hourlyHeatmap || d.bookingHeatmap;
+  const dayNameToNum = {Sunday:0,Monday:1,Tuesday:2,Wednesday:3,Thursday:4,Friday:5,Saturday:6};
+  if (Array.isArray(raw)) {
+    heatmap = raw;
+  } else if (raw && typeof raw === 'object') {
+    Object.entries(raw).forEach(([dayName, hours]) => {
+      const dayNum = dayNameToNum[dayName] != null ? dayNameToNum[dayName] : parseInt(dayName);
+      if (hours && typeof hours === 'object') {
+        Object.entries(hours).forEach(([hr, cnt]) => {
+          heatmap.push({ day: dayNum, hour: parseInt(hr), count: cnt || 0 });
+        });
+      }
+    });
+  }
   if (!heatmap.length) {
-    el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">Heatmap available with live data</div>';
+    el.innerHTML = '<div style="font-size:12px;color:#9CA3AF;padding:12px;">No heatmap data available</div>';
     return;
   }
 
@@ -1948,9 +1985,10 @@ function buildWeeklyRevenue(d) {
 }
 
 function buildFillRates(d) {
-  if (d.classes && d.classes.length) {
+  const clsData = d.classesByName || d.classes;
+  if (clsData && clsData.length) {
     const byName = {};
-    d.classes.forEach(c => {
+    clsData.forEach(c => {
       if (!byName[c.name]) byName[c.name] = { booked:0, capacity:0, count:0 };
       byName[c.name].booked += c.booked;
       byName[c.name].capacity += c.capacity;
@@ -1978,12 +2016,14 @@ function renderRecommendations(d) {
     recs.push({ icon:'&#128200;', color:'#FEF3C7', title:'Fill empty class spots', desc:`Your average fill rate is ${d.avgFillRate}%. Try promoting under-filled classes on Instagram Stories 24h before, or offer early-bird discounts for morning classes.`, priority:'High' });
   }
   // At-risk based
-  if (d.atRiskCount > 5) {
-    recs.push({ icon:'&#9888;', color:'#FEE2E2', title:`Re-engage ${d.atRiskCount} at-risk clients`, desc:'These clients haven\'t visited in 14+ days. Send a personalised win-back email with a complimentary class pass to bring them back into the studio.', priority:'Urgent' });
+  const arCount = (d.atRiskClients||[]).length;
+  if (arCount > 5) {
+    recs.push({ icon:'&#9888;', color:'#FEE2E2', title:`Re-engage ${arCount} at-risk clients`, desc:'These clients haven\'t visited in 14+ days. Send a personalised win-back email with a complimentary class pass to bring them back into the studio.', priority:'Urgent' });
   }
   // New client based
-  if (d.newThisMonth >= 10) {
-    recs.push({ icon:'&#127881;', color:'#DCFCE7', title:'Great acquisition momentum', desc:`You've added ${d.newThisMonth} new clients this month. Ensure your welcome automation is active and follow up with a personal message after their first class.`, priority:'Tip' });
+  const ncCount = d.newClients || 0;
+  if (ncCount >= 10) {
+    recs.push({ icon:'&#127881;', color:'#DCFCE7', title:'Great acquisition momentum', desc:`You've added ${ncCount} new clients this month. Ensure your welcome automation is active and follow up with a personal message after their first class.`, priority:'Tip' });
   }
   // Retention based
   if ((d.retentionRate||83) >= 80) {
