@@ -1452,35 +1452,44 @@ function renderAnalytics(d) {
 // ─── Load all advanced analytics sequentially (to avoid overloading MB API) ──
 async function loadAdvancedAnalytics() {
   const btn = $('btn-load-advanced');
-  const timeoutMs = 20000;
+  const timeoutMs = 45000; // 45s — these endpoints paginate through all clients
   const fetchWithTO = (url) => {
     const ctrl = new AbortController();
     const tid = setTimeout(() => ctrl.abort(), timeoutMs);
     return fetch(url, { headers: { 'x-session-token': token }, signal: ctrl.signal })
       .then(r => { clearTimeout(tid); return r.json(); })
-      .catch(e => ({ error: e.message }));
+      .catch(e => ({ ok: false, error: e.message }));
   };
+  let loaded = 0;
+  const total = 5;
+  const updateBtn = () => { if (btn) btn.textContent = `Loading ${loaded}/${total}...`; };
   try {
     // Load sequentially to avoid overloading MindBody API
+    updateBtn();
     const clvData = await fetchWithTO(`${PROXY}/api/analytics/clv`);
     renderCLVAnalytics(clvData);
+    loaded++; updateBtn();
 
     const cohortsData = await fetchWithTO(`${PROXY}/api/analytics/cohorts`);
     renderCohortRetention(cohortsData);
+    loaded++; updateBtn();
 
     const churnData = await fetchWithTO(`${PROXY}/api/analytics/churn-risk`);
     renderChurnRisk(churnData);
+    loaded++; updateBtn();
 
     const fvcData = await fetchWithTO(`${PROXY}/api/analytics/first-visit-conversion`);
     renderFirstVisitConversion(fvcData);
+    loaded++; updateBtn();
 
     const noshowsData = await fetchWithTO(`${PROXY}/api/analytics/no-shows`);
     renderNoShowTracker(noshowsData);
+    loaded++; updateBtn();
 
     if (btn) { btn.textContent = 'Loaded ✓'; btn.style.background = '#16A34A'; }
   } catch (e) {
     console.error('Advanced analytics error:', e);
-    if (btn) { btn.textContent = 'Retry'; btn.disabled = false; btn.style.background = ''; }
+    if (btn) { btn.textContent = `Loaded ${loaded}/${total} — Retry`; btn.disabled = false; btn.style.background = '#D97706'; }
   }
 }
 
@@ -1488,7 +1497,8 @@ async function loadAdvancedAnalytics() {
 function renderCLVAnalytics(data) {
   const el = $('an-clv-summary');
   const list = $('an-clv-list');
-  if (!el || !data.ok) return;
+  if (!el) return;
+  if (!data.ok) { el.innerHTML = '<div style="color:#DC2626;font-size:11px;padding:8px;">' + (data.error || 'Failed to load CLV data') + '</div>'; return; }
 
   // Summary cards
   el.innerHTML = `
@@ -1523,7 +1533,8 @@ function renderCLVAnalytics(data) {
 // ─── Render Cohort Retention Grid ───────────────────────────────────────────────
 function renderCohortRetention(data) {
   const el = $('an-cohort-grid');
-  if (!el || !data.ok || !data.grid) return;
+  if (!el) return;
+  if (!data.ok || !data.grid) { el.innerHTML = '<div style="color:#DC2626;font-size:11px;padding:8px;">' + (data.error || 'Failed to load cohort data') + '</div>'; return; }
 
   let html = '<table style="width:100%;border-collapse:collapse;font-size:10px;font-family:monospace;">';
   html += '<tr><th style="padding:4px;border:1px solid #E5E7EB;background:#F3F4F6;">Cohort</th>';
@@ -1549,7 +1560,8 @@ function renderCohortRetention(data) {
 function renderChurnRisk(data) {
   const countEl = $('an-churn-count');
   const listEl = $('an-churn-list');
-  if (!countEl || !listEl || !data.ok) return;
+  if (!countEl || !listEl) return;
+  if (!data.ok) { countEl.innerHTML = '<div style="color:#DC2626;font-size:11px;">' + (data.error || 'Failed to load') + '</div>'; return; }
 
   countEl.textContent = `${data.atRiskCount || 0} at risk`;
 
@@ -1576,7 +1588,8 @@ function renderChurnRisk(data) {
 function renderFirstVisitConversion(data) {
   const sumEl = $('an-fvc-summary');
   const alertEl = $('an-fvc-alert');
-  if (!sumEl || !alertEl || !data.ok) return;
+  if (!sumEl || !alertEl) return;
+  if (!data.ok) { sumEl.innerHTML = '<div style="color:#DC2626;font-size:11px;">' + (data.error || 'Failed to load') + '</div>'; return; }
 
   const results = data.results || {};
   const r30 = results['30 days'] || {};
@@ -1614,7 +1627,8 @@ function renderNoShowTracker(data) {
   const sumEl = $('an-noshows-summary');
   const listEl = $('an-noshows-list');
   const hdEl = $('an-highdemand-list');
-  if (!sumEl || !listEl || !data.ok) return;
+  if (!sumEl || !listEl) return;
+  if (!data.ok) { sumEl.innerHTML = '<div style="color:#DC2626;font-size:11px;">' + (data.error || 'Failed to load') + '</div>'; return; }
 
   const fillColor = data.overallFillRate >= 70 ? '#16A34A' : data.overallFillRate >= 50 ? '#D97706' : '#DC2626';
   const fillBg = data.overallFillRate >= 70 ? '#DCFCE7' : data.overallFillRate >= 50 ? '#FFF7ED' : '#FEE2E2';
@@ -1763,15 +1777,17 @@ function renderAttendanceChart(d, cur) {
     return;
   }
   const maxCount = Math.max(...chart.map(c => c.visits || 0), 1);
-  el.innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:100%;">${chart.map(c => {
+  el.innerHTML = `<div style="display:flex;align-items:flex-end;gap:2px;height:100%;padding-top:18px;">${chart.map(c => {
     const h = Math.max((c.visits / maxCount) * 100, 2);
     return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;height:100%;justify-content:flex-end;" title="${c.label}: ${c.visits} visits">
+      <div style="font-size:9px;color:#6B7280;margin-bottom:2px;">${c.visits}</div>
       <div style="width:70%;background:#0D3D20;border-radius:2px 2px 0 0;height:${h}%;min-height:2px;"></div>
     </div>`;
   }).join('')}</div>`;
   const labelsEl = document.getElementById('an-attendance-labels');
   if (labelsEl) {
-    labelsEl.innerHTML = chart.filter((_,i) => i % Math.ceil(chart.length/5) === 0).map(c => `<span>${c.label}</span>`).join('');
+    const step = Math.max(1, Math.ceil(chart.length / 8));
+    labelsEl.innerHTML = chart.filter((_,i) => i % step === 0).map(c => `<span>${c.label}</span>`).join('');
   }
 }
 
@@ -1922,10 +1938,10 @@ function renderStudioHeatmap(d) {
   const el = document.getElementById('an-heatmap');
   if (!el) return;
 
-  // Normalize heatmap: backend may send nested object { "Monday": {7:5} } or flat array [{day,hour,count}]
+  // Normalize heatmap: backend may send nested object { "Mon": {7:5} } or flat array [{day,hour,count}]
   let heatmap = [];
   const raw = d.hourlyHeatmap || d.bookingHeatmap;
-  const dayNameToNum = {Sunday:0,Monday:1,Tuesday:2,Wednesday:3,Thursday:4,Friday:5,Saturday:6};
+  const dayNameToNum = {Sun:0,Sunday:0,Mon:1,Monday:1,Tue:2,Tuesday:2,Wed:3,Wednesday:3,Thu:4,Thursday:4,Fri:5,Friday:5,Sat:6,Saturday:6};
   if (Array.isArray(raw)) {
     heatmap = raw;
   } else if (raw && typeof raw === 'object') {
@@ -1933,7 +1949,7 @@ function renderStudioHeatmap(d) {
       const dayNum = dayNameToNum[dayName] != null ? dayNameToNum[dayName] : parseInt(dayName);
       if (hours && typeof hours === 'object') {
         Object.entries(hours).forEach(([hr, cnt]) => {
-          heatmap.push({ day: dayNum, hour: parseInt(hr), count: cnt || 0 });
+          if (cnt > 0) heatmap.push({ day: dayNum, hour: parseInt(hr), count: cnt || 0 });
         });
       }
     });

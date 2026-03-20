@@ -1554,14 +1554,31 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     );
 
     // ─── CLIENT HEALTH ───────────────────────────────────────────────────────
-    const activeClients = allClients.filter(c => c.Active !== false);
+    // MindBody's Active flag is unreliable (marks all 3500+ clients as "active")
+    // Instead, determine activity from actual sales and class booking data
     const totalClients = allClients.length;
 
-    // Build a "last seen" map from class booking data (uses classes already fetched)
-    // This is more reliable than LastVisit which may not exist on the clients endpoint
+    // Build client activity maps from sales (most reliable activity signal)
+    const clientLastPurchase = {};
+    const clientPurchaseCount = {};
+    const processSalesForClients = (sales, map, countMap) => {
+      sales.forEach(s => {
+        const cId = s.ClientId || (s.Purchaser && s.Purchaser.Id) || (s.Client && s.Client.Id);
+        if (!cId) return;
+        const saleDate = s.SaleDateTime || s.SaleDate || s.CreatedDateTime;
+        if (saleDate) {
+          const dt = new Date(saleDate);
+          if (!map[cId] || dt > map[cId]) map[cId] = dt;
+        }
+        countMap[cId] = (countMap[cId] || 0) + 1;
+      });
+    };
+    processSalesForClients(currSales, clientLastPurchase, clientPurchaseCount);
+    processSalesForClients(prevSales, clientLastPurchase, clientPurchaseCount);
+
+    // Also track from class booking data
     const clientLastSeen = {};
     const clientVisitCount = {};
-    // Use ALL classes (current + previous period) for broader visibility
     [...currClasses, ...prevClasses].forEach(cls => {
       if (cls.Clients) {
         cls.Clients.forEach(client => {
@@ -1579,13 +1596,36 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     // Helper: get best estimate of last activity for a client
     const getLastActivity = (c) => {
       const cId = c.Id || c.UniqueId;
-      // Priority: 1) class booking data, 2) LastVisitDateTime (if MB returns it), 3) LastModifiedDateTime, 4) CreationDate
+      // Priority: 1) purchase date, 2) class booking, 3) LastVisitDateTime, 4) never
+      if (cId && clientLastPurchase[cId]) return clientLastPurchase[cId];
       if (cId && clientLastSeen[cId]) return clientLastSeen[cId];
       if (c.LastVisitDateTime) return new Date(c.LastVisitDateTime);
-      if (c.LastModifiedDateTime) return new Date(c.LastModifiedDateTime);
-      if (c.CreationDate) return new Date(c.CreationDate);
-      return new Date(0);
+      return null; // No activity data — don't fallback to CreationDate
     };
+
+    // "Active" = had a purchase or booking in the last 90 days
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const activeClients = allClients.filter(c => {
+      const lastAct = getLastActivity(c);
+      return lastAct && lastAct >= ninetyDaysAgo;
+    });
+
+    // For retention: clients active in current period vs clients active in previous period
+    const currPeriodActive = new Set();
+    const prevPeriodActive = new Set();
+    allClients.forEach(c => {
+      const cId = c.Id || c.UniqueId;
+      const lastAct = getLastActivity(c);
+      if (!lastAct || !cId) return;
+      if (lastAct >= period.start && lastAct <= period.end) currPeriodActive.add(cId);
+      if (lastAct >= period.prevStart && lastAct <= period.prevEnd) prevPeriodActive.add(cId);
+    });
+    // Retention = of clients active in previous period, how many are still active now?
+    let retainedCount = 0;
+    prevPeriodActive.forEach(id => { if (currPeriodActive.has(id)) retainedCount++; });
+    const retentionRate = prevPeriodActive.size > 0 ? Math.round((retainedCount / prevPeriodActive.size) * 100) : 0;
+    const prevRetentionRate = retentionRate; // no prior-prior data, keep same
+    const retentionGrowth = 0;
 
     // New clients this period
     const newClients = allClients.filter(c => {
@@ -1599,42 +1639,35 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
     }).length;
     const newClientsGrowth = prevNewClients !== 0 ? Math.round(((newClients - prevNewClients) / prevNewClients) * 100) : (newClients > 0 ? 100 : 0);
 
-    // First visit percentage
-    const firstVisitClients = allClients.filter(c => {
-      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
-      return cd && cd >= period.start && cd <= period.end;
-    }).length;
-    const firstVisitPct = totalClients > 0 ? Math.round((firstVisitClients / totalClients) * 100) : 0;
-
-    const prevFirstVisitClients = allClients.filter(c => {
-      const cd = c.CreationDate ? new Date(c.CreationDate) : null;
-      return cd && cd >= period.prevStart && cd <= period.prevEnd;
-    }).length;
-    const prevFirstVisitPct = totalClients > 0 ? Math.round((prevFirstVisitClients / totalClients) * 100) : 0;
+    // First visit percentage (new signups as % of active clients)
+    const firstVisitPct = activeClients.length > 0 ? Math.round((newClients / activeClients.length) * 100) : 0;
+    const prevFirstVisitPct = activeClients.length > 0 ? Math.round((prevNewClients / activeClients.length) * 100) : 0;
     const firstVisitGrowth = firstVisitPct - prevFirstVisitPct;
 
-    // Retention rate
-    const retentionRate = totalClients > 0 ? Math.round((activeClients.length / totalClients) * 100) : 0;
-    const prevActiveClients = allClients.filter(c => c.Active !== false).length;
-    const prevRetentionRate = totalClients > 0 ? Math.round((prevActiveClients / totalClients) * 100) : 0;
-    const retentionGrowth = retentionRate - prevRetentionRate;
-
-    // At-risk clients (no activity in 14+ days)
-    const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000);
+    // At-risk clients: were active in last 90 days but NOT in last 14 days
+    // This avoids showing 600-day-old ghosts
+    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
     const atRiskClients = allClients
       .filter(c => {
-        if (c.Active === false) return false;
-        return getLastActivity(c) < twoWeeksAgo;
+        const lastAct = getLastActivity(c);
+        if (!lastAct) return false;
+        // Was active in last 6 months but NOT in last 14 days
+        return lastAct >= sixMonthsAgo && lastAct < twoWeeksAgo;
       })
-      .sort((a, b) => getLastActivity(a) - getLastActivity(b))
+      .sort((a, b) => {
+        const aLast = getLastActivity(a) || new Date(0);
+        const bLast = getLastActivity(b) || new Date(0);
+        return aLast - bLast;
+      })
       .slice(0, 10)
       .map(c => {
         const cId = c.Id || c.UniqueId;
         return {
           name: `${c.FirstName || ''} ${c.LastName || ''}`.trim(),
           email: c.Email,
-          lastVisit: getLastActivity(c).toISOString(),
-          totalVisits: (cId && clientVisitCount[cId]) || 0,
+          lastVisit: (getLastActivity(c) || new Date(0)).toISOString(),
+          totalVisits: (cId && (clientVisitCount[cId] || clientPurchaseCount[cId])) || 0,
         };
       });
 
