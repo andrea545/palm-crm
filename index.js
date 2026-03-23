@@ -1418,15 +1418,17 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
       safeFetch(`${MB_BASE}/sale/sales?StartSaleDateTime=${startISO}&EndSaleDateTime=${endISO}`, 'currSales'),
       safeFetch(`${MB_BASE}/class/classes?StartDateTime=${prevStartISO}&EndDateTime=${prevEndISO}&Limit=200`, 'prevClasses'),
       safeFetch(`${MB_BASE}/sale/sales?StartSaleDateTime=${prevStartISO}&EndSaleDateTime=${prevEndISO}`, 'prevSales'),
-      safeFetch(`${MB_BASE}/client/clientservices?Limit=200`, 'memberships'),
+      // Note: clientservices and activeclientmemberships both require a ClientId
+      // For site-wide membership stats, use sale/contracts instead
+      safeFetch(`${MB_BASE}/sale/contracts?Limit=200`, 'contracts'),
     ]);
 
     const currClasses = (currClassesData.Classes || []).filter(c => !c.IsCanceled);
     const currSales = currSalesData.Sales || [];
     const prevClasses = (prevClassesData.Classes || []).filter(c => !c.IsCanceled);
     const prevSales = prevSalesData.Sales || [];
-    // ClientServices can serve as membership proxy — active services with recurring payments
-    const memberships = membershipData.ClientServices || [];
+    // Contracts from sale/contracts endpoint — represents memberships/recurring plans
+    const contracts = membershipData.Contracts || [];
 
     // ─── Helper: calculate total from a MindBody Sale object ──────────────────
     // MindBody Public API v6 (PascalCase) vs Webhooks API (camelCase) return different field names.
@@ -1771,14 +1773,17 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
       });
 
     // ─── MEMBERSHIPS ─────────────────────────────────────────────────────────
-    // ClientServices returns active services — filter for memberships/autopay
-    const activeMemberships = memberships.filter(m => m.Active === true || m.Remaining > 0).length;
+    // sale/contracts returns site-wide contracts/memberships
+    const activeMemberships = contracts.filter(m => {
+      const end = m.EndDate ? new Date(m.EndDate) : null;
+      return !end || end > new Date();
+    }).length;
     const prevActiveMemberships = activeMemberships; // Snapshot — no historical comparison available
     const membershipGrowth = 0;
 
     const membershipTypesMap = {};
-    memberships.forEach(m => {
-      const type = m.Name || m.Program?.Name || 'Other';
+    contracts.forEach(m => {
+      const type = m.Name || m.ContractName || 'Other';
       membershipTypesMap[type] = (membershipTypesMap[type] || 0) + 1;
     });
     const membershipTypes = Object.entries(membershipTypesMap)
