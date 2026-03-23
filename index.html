@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Palm Sporting Club — CRM</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0D3D20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Palm CRM">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#FAF9F7;color:#111827;font-size:14px;}
@@ -192,11 +198,56 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .rec-p-high{background:#FEF3C7;color:#92400E;}
 .rec-p-medium{background:#DBEAFE;color:#1E40AF;}
 .rec-p-low{background:#F0FDF4;color:#166534;}
+/* Hamburger */
+.hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;color:#374151;}
+.hamburger svg{width:22px;height:22px;}
+/* Sidebar overlay (mobile) */
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
+.sidebar-overlay.open{display:block;}
+/* ─── Mobile responsive ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .hamburger{display:block;}
+  .sidebar{
+    position:fixed;left:0;top:0;bottom:0;z-index:200;
+    transform:translateX(-100%);transition:transform .22s ease;
+    width:240px;overflow-y:auto;
+  }
+  .sidebar.mobile-open{transform:translateX(0);}
+  .app{flex-direction:column;height:auto;overflow:visible;}
+  .main{height:100vh;display:flex;flex-direction:column;}
+  .content{padding:12px;padding-bottom:env(safe-area-inset-bottom,0);}
+  .topbar{padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top,0));}
+  .topbar h1{font-size:15px;}
+  /* Grids → single or 2-column */
+  .stats{grid-template-columns:repeat(2,1fr);gap:8px;}
+  .g2{grid-template-columns:1fr;}
+  .master-grid{grid-template-columns:1fr 1fr;}
+  .master-grid-2{grid-template-columns:1fr;}
+  .an-grid{grid-template-columns:repeat(2,1fr);}
+  .sched-grid{grid-template-columns:repeat(4,minmax(0,1fr));}
+  /* Cards */
+  .card{padding:10px 12px;}
+  /* Tables — horizontal scroll */
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  /* Analytics advanced sections */
+  [id^="an-ret-"],[id^="an-clv-"],[id^="an-cohort-"]{overflow-x:auto;}
+  /* Actions bar */
+  .actions{gap:6px;}
+  .btn{padding:5px 10px;font-size:12px;}
+  .live-badge{font-size:10px;padding:2px 7px;}
+}
+@media (max-width: 420px) {
+  .stats{grid-template-columns:1fr 1fr;}
+  .master-grid{grid-template-columns:1fr;}
+  .an-grid{grid-template-columns:1fr 1fr;}
+  .topbar h1{font-size:14px;}
+}
 </style>
 </head>
 <body>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 <div class="app">
-<div class="sidebar">
+<div class="sidebar" id="sidebar">
   <div class="logo">
     <div class="logo-name">Palm Sporting Club</div>
     <div class="logo-sub">Marbella · Business CRM</div>
@@ -257,7 +308,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 <div class="main">
   <div class="topbar">
-    <h1 id="page-title">Dashboard</h1>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="hamburger" onclick="openSidebar()" aria-label="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <h1 id="page-title">Dashboard</h1>
+    </div>
     <div class="actions">
       <div class="live-badge" id="sse-status"><div class="dot pulse"></div>Live</div>
       <button class="btn btn-g" onclick="nav('emails',document.querySelector('.ni[onclick*=emails]'))">+ New email</button>
@@ -609,7 +665,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="clients-ok" class="ok-box" style="display:none;"></div>
       <div id="clients-err" class="err-box" style="display:none;"></div>
       <div id="clients-body" style="display:none;">
-        <div class="card" style="padding:0;overflow:hidden;">
+        <div class="card tbl-wrap" style="padding:0;overflow:hidden;">
           <table class="tbl">
             <thead id="client-thead"><tr><th>Client</th><th>Active</th><th>Phone</th><th>Visits</th><th>Status</th></tr></thead>
             <tbody id="client-tbody"></tbody>
@@ -1460,36 +1516,25 @@ async function loadAdvancedAnalytics() {
       .then(r => { clearTimeout(tid); return r.json(); })
       .catch(e => ({ ok: false, error: e.message }));
   };
-  let loaded = 0;
-  const total = 5;
-  const updateBtn = () => { if (btn) btn.textContent = `Loading ${loaded}/${total}...`; };
   try {
-    // Load sequentially to avoid overloading MindBody API
-    updateBtn();
-    const clvData = await fetchWithTO(`${PROXY}/api/analytics/clv`);
+    if (btn) btn.textContent = 'Loading...';
+    // All endpoints share the warm backend cache — load in parallel
+    const [clvData, cohortsData, churnData, fvcData, noshowsData] = await Promise.all([
+      fetchWithTO(`${PROXY}/api/analytics/clv`),
+      fetchWithTO(`${PROXY}/api/analytics/cohorts`),
+      fetchWithTO(`${PROXY}/api/analytics/churn-risk`),
+      fetchWithTO(`${PROXY}/api/analytics/first-visit-conversion`),
+      fetchWithTO(`${PROXY}/api/analytics/no-shows`)
+    ]);
     renderCLVAnalytics(clvData);
-    loaded++; updateBtn();
-
-    const cohortsData = await fetchWithTO(`${PROXY}/api/analytics/cohorts`);
     renderCohortRetention(cohortsData);
-    loaded++; updateBtn();
-
-    const churnData = await fetchWithTO(`${PROXY}/api/analytics/churn-risk`);
     renderChurnRisk(churnData);
-    loaded++; updateBtn();
-
-    const fvcData = await fetchWithTO(`${PROXY}/api/analytics/first-visit-conversion`);
     renderFirstVisitConversion(fvcData);
-    loaded++; updateBtn();
-
-    const noshowsData = await fetchWithTO(`${PROXY}/api/analytics/no-shows`);
     renderNoShowTracker(noshowsData);
-    loaded++; updateBtn();
-
     if (btn) { btn.textContent = 'Loaded ✓'; btn.style.background = '#16A34A'; }
   } catch (e) {
     console.error('Advanced analytics error:', e);
-    if (btn) { btn.textContent = `Loaded ${loaded}/${total} — Retry`; btn.disabled = false; btn.style.background = '#D97706'; }
+    if (btn) { btn.textContent = 'Error — Retry'; btn.disabled = false; btn.style.background = '#D97706'; }
   }
 }
 
@@ -3651,6 +3696,15 @@ function renderMasterTrend(studio, kitchen, cur) {
     '</div>';
 }
 
+// ─── Mobile sidebar ────────────────────────────────────────────────────────────
+function openSidebar() {
+  $('sidebar').classList.add('mobile-open');
+  $('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+  $('sidebar').classList.remove('mobile-open');
+  $('sidebar-overlay').classList.remove('open');
+}
 // ─── Navigation ───────────────────────────────────────────────────────────────
 const loaded = {};
 let currentPage = 'master';
@@ -3664,6 +3718,8 @@ function nav(page, el) {
   // Always reload data when switching tabs
   loaded[page] = false;
   loadPage(page);
+  // Close sidebar on mobile after navigation
+  closeSidebar();
 }
 function loadPage(page) {
   if (page==='master') loadMaster();

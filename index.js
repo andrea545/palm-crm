@@ -229,6 +229,10 @@ app.get('/api/debug-client-services', async (req, res) => {
 
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+// PWA icons — served as SVG (works for both 192 and 512 sizes)
+const PWA_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><rect width="192" height="192" rx="40" fill="#0D3D20"/><text x="96" y="130" font-family="-apple-system,sans-serif" font-size="100" font-weight="700" fill="#ffffff" text-anchor="middle">P</text></svg>`;
+app.get('/icon-192.png', (req, res) => { res.setHeader('Content-Type','image/svg+xml'); res.send(PWA_ICON_SVG); });
+app.get('/icon-512.png', (req, res) => { res.setHeader('Content-Type','image/svg+xml'); res.send(PWA_ICON_SVG); });
 app.use(express.static(__dirname));
 // ─── MindBody token cache ─────────────────────────────────────────────────────
 let tokenCache = { token: null, expires: 0 };
@@ -1348,15 +1352,31 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// ─── Analytics helper: fetch all clients with pagination + cache ─────────────
+// ─── Analytics helper: fetch all clients with pagination + persistent cache ───
+const MB_CLIENT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CLIENT_CACHE_FILE = (() => {
+  try { return path.join(DATA_DIR, '.client-cache.json'); } catch(e) { return path.join(__dirname, '.client-cache.json'); }
+})();
+
 let _mbClientCache = { data: null, ts: 0 };
-const MB_CLIENT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-async function fetchAllMBClients(mbToken) {
-  // Return cached data if fresh (avoids hammering MindBody API)
-  if (_mbClientCache.data && (Date.now() - _mbClientCache.ts) < MB_CLIENT_CACHE_TTL) {
-    console.log(`[clients] Returning ${_mbClientCache.data.length} cached clients`);
-    return _mbClientCache.data;
+let _clientCacheRefreshing = false;
+
+// Load persisted cache from disk on startup
+try {
+  if (fs.existsSync(CLIENT_CACHE_FILE)) {
+    const raw = JSON.parse(fs.readFileSync(CLIENT_CACHE_FILE, 'utf8'));
+    if (raw.data && raw.ts && (Date.now() - raw.ts) < MB_CLIENT_CACHE_TTL) {
+      _mbClientCache = raw;
+      console.log(`[clients] Loaded ${raw.data.length} clients from disk cache (age: ${Math.round((Date.now()-raw.ts)/60000)}m)`);
+    }
   }
+} catch(e) { console.warn('[clients] Could not load disk cache:', e.message); }
+
+function saveClientCache() {
+  try { fs.writeFileSync(CLIENT_CACHE_FILE, JSON.stringify(_mbClientCache)); } catch(e) { console.warn('[clients] Could not save disk cache:', e.message); }
+}
+
+async function _doFetchAllMBClients(mbToken) {
   let all = [];
   const startTime = Date.now();
   for (let offset = 0; offset < 5000; offset += 200) {
@@ -1374,7 +1394,27 @@ async function fetchAllMBClients(mbToken) {
   }
   console.log(`[clients] Fetched ${all.length} clients in ${Date.now() - startTime}ms`);
   _mbClientCache = { data: all, ts: Date.now() };
+  saveClientCache();
   return all;
+}
+
+async function fetchAllMBClients(mbToken) {
+  const age = Date.now() - _mbClientCache.ts;
+  // Fresh cache — return immediately
+  if (_mbClientCache.data && age < MB_CLIENT_CACHE_TTL) {
+    console.log(`[clients] Returning ${_mbClientCache.data.length} cached clients (age: ${Math.round(age/60000)}m)`);
+    return _mbClientCache.data;
+  }
+  // Stale cache — return stale data immediately and refresh in background
+  if (_mbClientCache.data && !_clientCacheRefreshing) {
+    console.log(`[clients] Returning stale cache (${Math.round(age/60000)}m old), refreshing in background`);
+    _clientCacheRefreshing = true;
+    _doFetchAllMBClients(mbToken).catch(e => console.error('[clients] Background refresh failed:', e.message)).finally(() => { _clientCacheRefreshing = false; });
+    return _mbClientCache.data;
+  }
+  // No cache at all — must wait for full fetch
+  _clientCacheRefreshing = true;
+  try { return await _doFetchAllMBClients(mbToken); } finally { _clientCacheRefreshing = false; }
 }
 
 // ─── Analytics API endpoints ──────────────────────────────────────────────────
@@ -2801,4 +2841,21 @@ app.listen(CONFIG.port, () => {
   console.log(`   Automations: 4 email triggers active`);
   console.log(`   Analytics: Studio + Kitchen + Master`);
   console.log(`   Square: ${CONFIG.squareToken ? 'Configured' : 'Not configured (add SQUARE_ACCESS_TOKEN)'}`);
+
+  // Warm client cache 10s after startup (non-blocking)
+  setTimeout(async () => {
+    try {
+      console.log('[clients] Warming cache on startup...');
+      const mbToken = await getMBToken();
+      await _doFetchAllMBClients(mbToken);
+    } catch(e) { console.warn('[clients] Startup cache warm failed:', e.message); }
+  }, 10000);
+
+  // Background refresh every 25 minutes to keep cache warm
+  setInterval(async () => {
+    try {
+      const mbToken = await getMBToken();
+      await _doFetchAllMBClients(mbToken);
+    } catch(e) { console.warn('[clients] Background refresh failed:', e.message); }
+  }, 25 * 60 * 1000);
 });
