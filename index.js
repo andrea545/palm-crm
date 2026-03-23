@@ -160,6 +160,73 @@ app.get('/api/mb-debug', async (req, res) => {
     res.json({ error: err.message });
   }
 });
+// Debug: check a specific client's services + memberships to verify last-credit logic
+app.get('/api/debug-client-services', async (req, res) => {
+  try {
+    const clientId = req.query.clientId;
+    if (!clientId) return res.json({ error: 'Pass ?clientId=XXXX' });
+    const mbToken = await getMBToken();
+
+    // Fetch both: credit services AND memberships (separate endpoints in MindBody)
+    const [servicesRes, membershipsRes] = await Promise.all([
+      fetchWithTimeout(`${MB_BASE}/client/clientservices?clientId=${clientId}`, { headers: mbHeaders(mbToken) }, 15000),
+      fetchWithTimeout(`${MB_BASE}/client/activeclientmemberships?clientId=${clientId}`, { headers: mbHeaders(mbToken) }, 15000)
+        .catch(e => ({ json: () => ({ error: e.message }) })),
+    ]);
+    const servicesData = await servicesRes.json();
+    const membershipsData = await membershipsRes.json();
+
+    const services = servicesData.ClientServices || [];
+    const memberships = membershipsData.ClientMemberships || [];
+
+    // Show raw credit services + how our automation categorizes them
+    const categorizedServices = services.map(s => {
+      const n = (s.Name || '').toLowerCase();
+      const isIntro = n.includes('intro') && (s.Count || 0) <= 3 && (s.Count || 0) > 0;
+      const isClassPack = (s.Count || 0) > 0 && !n.includes('intro');
+      return {
+        // Raw fields from MindBody
+        _allKeys: Object.keys(s),
+        _category: isIntro ? 'INTRO_PACK' : isClassPack ? 'CLASS_PACK' : 'OTHER',
+        _wouldTriggerLastCredit: isClassPack && (s.Remaining ?? 0) === 0,
+        ...s,
+      };
+    });
+
+    // Show raw memberships from dedicated endpoint
+    const categorizedMemberships = memberships.map(m => ({
+      _allKeys: Object.keys(m),
+      _source: 'GET client/activeclientmemberships',
+      ...m,
+    }));
+
+    const classPackCount = categorizedServices.filter(c => c._category === 'CLASS_PACK').length;
+    const allPacksEmpty = categorizedServices.filter(c => c._category === 'CLASS_PACK').every(c => (c.Remaining ?? 0) === 0);
+    const hasActiveMembership = memberships.length > 0;
+
+    res.json({
+      clientId,
+      creditServices: { count: services.length, items: categorizedServices },
+      activeMemberships: { count: memberships.length, items: categorizedMemberships, rawResponse: membershipsData },
+      summary: {
+        hasActiveMembership,
+        classPackCount,
+        allPacksEmpty: classPackCount > 0 ? allPacksEmpty : 'N/A (no class packs)',
+        wouldSendLastCreditEmail: classPackCount > 0 && allPacksEmpty && !hasActiveMembership,
+        reason: hasActiveMembership
+          ? `BLOCKED — client has ${memberships.length} active membership(s)`
+          : classPackCount === 0
+            ? 'NO — no class packs found'
+            : allPacksEmpty
+              ? 'YES — all class packs empty, no membership'
+              : 'NO — still has credits remaining',
+      },
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 app.use(express.static(__dirname));
@@ -638,18 +705,24 @@ async function handleAutomations(event) {
       const siteId = CONFIG.siteId;
       if (!clientId) { console.log(`[automation] No clientId for ${type} — skipped`); return; }
       const mbToken = await getMBToken();
-      const [clientRes, servicesRes] = await Promise.all([
+      const [clientRes, servicesRes, membershipsRes] = await Promise.all([
         fetch(`${MB_BASE}/client/clients?clientIds=${clientId}`, {
           headers: mbHeaders(mbToken)
         }),
         fetch(`${MB_BASE}/client/clientservices?clientId=${clientId}`, {
           headers: mbHeaders(mbToken)
         }),
+        // Dedicated memberships endpoint — the proper way to check for active memberships
+        fetch(`${MB_BASE}/client/activeclientmemberships?clientId=${clientId}`, {
+          headers: mbHeaders(mbToken)
+        }).catch(e => { console.log(`[automation] activeclientmemberships failed: ${e.message}`); return { json: () => ({}) }; }),
       ]);
       const clientData = await clientRes.json();
       const servicesData = await servicesRes.json();
+      const membershipsData = await membershipsRes.json();
       const client = (clientData.Clients || [])[0];
       const services = servicesData.ClientServices || [];
+      const clientMemberships = membershipsData.ClientMemberships || [];
       if (!client) return;
       const name = client.FirstName || 'there';
       const email = client.Email;
@@ -660,12 +733,20 @@ async function handleAutomations(event) {
         return true;
       });
 
-      // Categorise services
+      // ── Categorise services ──
+      // ClientServices = credit-based services (class packs, intro packs)
+      // ActiveClientMemberships = recurring memberships (separate MindBody endpoint)
       const introPacks = activeServices.filter(s => (s.Name||'').toLowerCase().includes('intro') && (s.Count||0) <= 3 && (s.Count||0) > 0);
       const classPacks = activeServices.filter(s => {
         const n = (s.Name||'').toLowerCase();
-        return (s.Count||0) > 3 && !n.includes('intro') && !n.includes('unlimited') && !n.includes('membership');
+        return (s.Count||0) > 0 && !n.includes('intro');
       });
+
+      // Use the DEDICATED memberships endpoint — this is the proper MindBody way
+      // clientMemberships comes from GET client/activeclientmemberships
+      const hasActiveMembership = clientMemberships.length > 0;
+
+      console.log(`[automation] ${email} services: ${activeServices.length} credit services, ${classPacks.length} class packs, ${introPacks.length} intro packs, ${clientMemberships.length} active memberships${hasActiveMembership ? ' (' + clientMemberships.map(m => m.Name || m.MembershipName || 'unnamed').join(', ') + ')' : ''}`);
 
       // Intro pack complete: ALL intro packs used up
       const introAllUsed = introPacks.length > 0 && introPacks.every(s => (s.Remaining ?? 0) === 0);
@@ -678,15 +759,18 @@ async function handleAutomations(event) {
         }
       }
 
-      // Last credit: ONLY if ALL class packs have 0 remaining (no credits left anywhere)
+      // Last credit: ONLY if ALL class packs have 0 remaining AND client has NO active membership
       const hasAnyCredits = classPacks.some(s => (s.Remaining ?? 0) > 0);
       const allPacksEmpty = classPacks.length > 0 && !hasAnyCredits;
-      if (allPacksEmpty) {
+
+      if (hasActiveMembership) {
+        console.log(`[automation] ${email} has active membership — skipping last credit email`);
+      } else if (allPacksEmpty) {
         const recentlySent = emailLog.some(e => e.to === email && e.category === 'last_credit' && e.sentAt > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
         if (!recentlySent) {
           const tpl = EMAIL_TEMPLATES.lastCredit(name);
           await sendEmail({ to: email, toName: name, ...tpl, category: 'last_credit', trigger: 'classRosterBooking.created' });
-          console.log(`[automation] Last credit email sent to ${email} — all ${classPacks.length} packs empty`);
+          console.log(`[automation] Last credit email sent to ${email} — all ${classPacks.length} packs empty, no membership found`);
         } else {
           console.log(`[automation] Last credit already sent to ${email} in past 30 days — skipped`);
         }
