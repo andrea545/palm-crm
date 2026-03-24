@@ -1861,6 +1861,7 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
       totalVisits,
       prevVisits,
       visitsGrowth,
+      bookingsGrowth: visitsGrowth,
       classesByName,
       instructorStats,
       hourlyAttendance,
@@ -1909,19 +1910,49 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
     const period = getCalendarPeriod(range, now);
     const mbToken = await getMBToken();
 
-    // Fetch all clients
+    // Fetch clients + sales + classes for activity-based metrics (not the unreliable Active flag)
     const allClients = await fetchAllMBClients(mbToken);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
 
-    // Calculate retention metrics
-    const activeClients = allClients.filter(c => c.Active !== false);
+    // Fetch recent sales for activity tracking
+    const salesRes = await fetchWithTimeout(
+      `${MB_BASE}/sale/sales?StartSaleDateTime=${sixMonthsAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
+      { headers: mbHeaders(mbToken) }, 15000
+    ).catch(() => null);
+    const salesData = salesRes ? await salesRes.json() : {};
+    const recentSales = salesData.Sales || [];
+
+    // Build last-activity map from sales
+    const clientLastActivity = {};
+    for (const sale of recentSales) {
+      const cid = sale.ClientID || sale.ClientId;
+      const saleDate = new Date(sale.SaleDateTime || sale.SaleDate || sale.CreatedDateTime || now);
+      if (!clientLastActivity[cid] || saleDate > clientLastActivity[cid]) {
+        clientLastActivity[cid] = saleDate;
+      }
+    }
+
+    // Helper: get last activity for a client (same logic as overview)
+    const getLastActivity = (c) => {
+      const cId = c.Id || c.ID || c.UniqueId;
+      if (cId && clientLastActivity[cId]) return clientLastActivity[cId];
+      if (c.LastVisitDateTime) return new Date(c.LastVisitDateTime);
+      return null;
+    };
+
+    // "Active" = had activity in the last 90 days (NOT MindBody's Active flag)
+    const activeClients = allClients.filter(c => {
+      const lastAct = getLastActivity(c);
+      return lastAct && lastAct >= ninetyDaysAgo;
+    });
     const totalClients = allClients.length;
     const retentionRate = totalClients > 0 ? Math.round((activeClients.length / totalClients) * 100) : 0;
 
-    // Churned clients (became inactive during this period)
+    // Churned = was active in last 6 months but NOT in last 90 days
     const churned = allClients.filter(c => {
-      if (c.Active !== false) return false;
-      const lastMod = c.LastModifiedDateTime ? new Date(c.LastModifiedDateTime) : null;
-      return lastMod && lastMod >= period.start && lastMod <= period.end;
+      const lastAct = getLastActivity(c);
+      return lastAct && lastAct >= sixMonthsAgo && lastAct < ninetyDaysAgo;
     });
 
     // New clients in period
@@ -1930,12 +1961,11 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
       return cd && cd >= period.start && cd <= period.end;
     }).length;
 
-    // At-risk clients (no visit in 14+ days)
-    const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000);
+    // At-risk = active in last 6 months but no activity in 14+ days
+    const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
     const atRiskCount = allClients.filter(c => {
-      if (c.Active === false) return false;
-      const lastVisit = c.LastVisit ? new Date(c.LastVisit) : (c.LastModifiedDateTime ? new Date(c.LastModifiedDateTime) : new Date(0));
-      return lastVisit < twoWeeksAgo;
+      const lastAct = getLastActivity(c);
+      return lastAct && lastAct >= sixMonthsAgo && lastAct < twoWeeksAgo;
     }).length;
 
     res.json({
@@ -1985,8 +2015,9 @@ app.get('/api/analytics/clv', requireAuth, async (req, res) => {
     // Build client map
     const clvByClient = {};
     for (const client of allClients) {
-      clvByClient[client.ID] = {
-        id: client.ID,
+      const clientId = client.Id || client.ID || client.ClientId;
+      clvByClient[clientId] = {
+        id: clientId,
         name: (client.FirstName || '') + ' ' + (client.LastName || ''),
         createdAt: client.CreatedDateTime ? new Date(client.CreatedDateTime) : now,
         totalRevenue: 0, salesCount: 0,
@@ -2080,7 +2111,7 @@ app.get('/api/analytics/cohorts', requireAuth, async (req, res) => {
       if (!createdDate) continue;
       const cohortKey = createdDate.getFullYear() + '-' + String(createdDate.getMonth() + 1).padStart(2, '0');
       if (!cohorts[cohortKey]) cohorts[cohortKey] = [];
-      cohorts[cohortKey].push({ id: client.ID, createdAt: createdDate });
+      cohorts[cohortKey].push({ id: client.Id || client.ID || client.ClientId, createdAt: createdDate });
     }
 
     // Build retention grid
@@ -2132,23 +2163,15 @@ app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-    // Fetch client services (for credits remaining) and recent sales (for activity)
-    const [svcRes, salesRes] = await Promise.all([
-      fetchWithTimeout(`${MB_BASE}/client/clientservices?Limit=200`, { headers: mbHeaders(mbToken) }, 15000).catch(() => null),
-      fetchWithTimeout(`${MB_BASE}/sale/sales?StartSaleDateTime=${sixtyDaysAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`, { headers: mbHeaders(mbToken) }, 15000).catch(() => null),
-    ]);
-    const svcData = svcRes ? await svcRes.json() : {};
+    // Fetch recent sales for activity tracking
+    // Note: client/clientservices requires a clientId and cannot be bulk-fetched,
+    // so we score churn risk based on sales activity patterns only
+    const salesRes = await fetchWithTimeout(
+      `${MB_BASE}/sale/sales?StartSaleDateTime=${sixtyDaysAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
+      { headers: mbHeaders(mbToken) }, 15000
+    ).catch(() => null);
     const salesData = salesRes ? await salesRes.json() : {};
-    const services = svcData.ClientServices || [];
     const recentSales = salesData.Sales || [];
-
-    // Build credits map from client services
-    const creditsMap = {};
-    for (const svc of services) {
-      const cid = svc.ClientID || svc.ClientId;
-      const remaining = svc.Remaining || svc.RemainingCount || 0;
-      if (!creditsMap[cid] || remaining > creditsMap[cid]) creditsMap[cid] = remaining;
-    }
 
     // Build recent activity map from sales
     const clientSales = {};
@@ -2161,7 +2184,7 @@ app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
 
     const riskScores = [];
     for (const client of allClients) {
-      const cid = client.ID;
+      const cid = client.Id || client.ID || client.ClientId;
       const createdAt = client.CreatedDateTime ? new Date(client.CreatedDateTime) : null;
       if (!createdAt) continue;
 
@@ -2173,32 +2196,27 @@ app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
       const lastActivity = lastVisitDate || lastModified || createdAt;
       const daysSinceLastActivity = Math.floor((now - lastActivity) / (1000 * 60 * 60 * 24));
 
-      // Days since last activity risk (20% weight)
+      // Days since last activity risk (30% weight)
       let daysSinceRisk = 0;
       if (daysSinceLastActivity <= 7) daysSinceRisk = 0;
       else if (daysSinceLastActivity <= 14) daysSinceRisk = 40;
       else if (daysSinceLastActivity <= 21) daysSinceRisk = 70;
       else daysSinceRisk = 100;
 
-      // Credits remaining risk (25% weight)
-      const credits = creditsMap[cid] || 0;
-      const creditsRisk = credits === 0 ? 100 : credits <= 2 ? 70 : credits <= 5 ? 30 : 0;
-
-      // Recent purchase activity (40% weight) — sales in last 30 days vs previous 30 days
+      // Recent purchase activity (50% weight) — sales in last 30 days vs previous 30 days
       const sales30 = (clientSales[cid] || []).filter(d => d > thirtyDaysAgo).length;
       const sales60 = (clientSales[cid] || []).filter(d => d <= thirtyDaysAgo && d > sixtyDaysAgo).length;
       const activityDecline = sales60 > 0 ? Math.max(0, ((sales60 - sales30) / sales60) * 100) : (sales30 === 0 ? 80 : 0);
 
-      // Account age factor (15% weight) — newer clients with no activity are less concerning
+      // Account age factor (20% weight) — newer clients with no activity are less concerning
       const monthsActive = Math.max(1, (now - createdAt) / (1000 * 60 * 60 * 24 * 30));
       const engagementRisk = monthsActive > 3 && sales30 === 0 ? 80 : monthsActive > 1 && sales30 === 0 ? 50 : 0;
 
-      // Weighted score
-      const score = (activityDecline * 0.4) + (daysSinceRisk * 0.2) + (creditsRisk * 0.25) + (engagementRisk * 0.15);
+      // Weighted score (activity 50% + days 30% + engagement 20%)
+      const score = (activityDecline * 0.5) + (daysSinceRisk * 0.3) + (engagementRisk * 0.2);
 
       const factors = [];
       if (daysSinceLastActivity > 14) factors.push(`No activity for ${daysSinceLastActivity} days`);
-      if (credits <= 2) factors.push(`${credits} credits remaining`);
       if (activityDecline > 30) factors.push(`Purchase activity down ${Math.round(activityDecline)}%`);
       if (sales30 === 0 && monthsActive > 2) factors.push('No purchases in 30 days');
 
@@ -2209,7 +2227,6 @@ app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
           email: client.Email,
           score: Math.round(score),
           daysSinceLastActivity,
-          creditsRemaining: credits,
           factors: factors.slice(0, 3),
           recommendedAction: score > 70 ? 'Send win-back offer' : score > 50 ? 'Personal re-engagement' : 'Monitor',
         });
@@ -2269,15 +2286,15 @@ app.get('/api/analytics/first-visit-conversion', requireAuth, async (req, res) =
         return created && created >= w.since;
       });
 
-      const converted = newClients.filter(c => purchasedClients.has(String(c.ID)));
-      const notConverted = newClients.filter(c => !purchasedClients.has(String(c.ID)));
+      const converted = newClients.filter(c => purchasedClients.has(String(c.Id || c.ID || c.ClientId)));
+      const notConverted = newClients.filter(c => !purchasedClients.has(String(c.Id || c.ID || c.ClientId)));
 
       results[w.label] = {
         totalFirstTime: newClients.length,
         convertedCount: converted.length,
         conversionRate: newClients.length > 0 ? Math.round((converted.length / newClients.length) * 100) : 0,
         noSecondVisit: notConverted.slice(0, 5).map(c => ({
-          ID: c.ID,
+          ID: c.Id || c.ID || c.ClientId,
           FirstName: c.FirstName, LastName: c.LastName,
           Email: c.Email,
           CreatedDateTime: c.CreatedDateTime,

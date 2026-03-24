@@ -1384,11 +1384,11 @@ function getDemoAnalytics() {
   return {
     live: false,
     range: anPeriod, rangeDays: weekCounts[anPeriod] || 30,
-    totalClients: 142, activeClients: 118, newThisMonth: Math.round(14 * rm),
-    classesThisMonth: Math.round(96 * rm), totalBooked: Math.round(672 * rm), avgFillRate: 78,
+    totalClients: 142, activeClients: 118, newClients: Math.round(14 * rm),
+    totalClasses: Math.round(96 * rm), totalBooked: Math.round(672 * rm), avgFillRate: 78,
     totalRevenue: Math.round(18420 * rm),
     totalVisits: Math.round(672 * rm), totalBookings: Math.round(672 * rm),
-    revGrowth: 12, classesGrowth: 5, fillGrowth: 3, membersGrowth: 8,
+    revenueGrowth: 12, salesCountGrowth: 5, fillRateGrowth: 3, membershipGrowth: 8,
     visitsGrowth: 12, bookingsGrowth: 7, newClientsGrowth: 15, retentionGrowth: 2,
     atRiskCount: 6,
     atRiskClients: [
@@ -1403,9 +1403,13 @@ function getDemoAnalytics() {
     weeklyRevenue: dailyRevenue,
     dailyAttendance: dailyAttendance,
     classes: classes,
+    classesByName: classes,
     instructors: instructors,
+    instructorStats: instructors,
     serviceRevenue: serviceRevenue,
+    revenueBySvc: serviceRevenue,
     bookingHeatmap: heatmap,
+    hourlyHeatmap: heatmap,
     retentionRate: 83,
     churnRate: 8,
     churnedCount: 11,
@@ -1464,7 +1468,7 @@ function renderAnalytics(d) {
       <div style="padding:10px;background:#DBEAFE;border-radius:10px;">
         <div style="font-size:10px;color:#0369A1;text-transform:uppercase;letter-spacing:.5px;">Total Bookings</div>
         <div style="font-size:22px;font-weight:700;color:#111827;margin:2px 0;">${d.totalBooked||0}</div>
-        ${gPill(d.visitsGrowth)}
+        ${gPill(d.bookingsGrowth)}
       </div>
       <div style="padding:10px;background:#F3E8FF;border-radius:10px;">
         <div style="font-size:10px;color:#5B21B6;text-transform:uppercase;letter-spacing:.5px;">New Clients</div>
@@ -1591,6 +1595,7 @@ function renderCohortRetention(data) {
   for (const row of data.grid) {
     html += `<tr><td style="padding:4px;border:1px solid #E5E7EB;background:#F9FAFB;font-weight:600;">${row.cohort}</td>`;
     for (const ret of row.retention) {
+      if (ret === null || ret === undefined) { html += '<td style="padding:4px;border:1px solid #E5E7EB;background:#F9FAFB;text-align:center;color:#D1D5DB;">—</td>'; continue; }
       const color = ret >= 50 ? '#D1FAE5' : ret >= 25 ? '#FEF3C7' : '#FEE2E2';
       const textColor = ret >= 50 ? '#065F46' : ret >= 25 ? '#78350F' : '#7F1D1D';
       html += `<td style="padding:4px;border:1px solid #E5E7EB;background:${color};color:${textColor};text-align:center;font-weight:600;">${ret}%</td>`;
