@@ -1417,6 +1417,28 @@ async function fetchAllMBClients(mbToken) {
   try { return await _doFetchAllMBClients(mbToken); } finally { _clientCacheRefreshing = false; }
 }
 
+// Helper: fetch all sales with pagination (MindBody defaults to ~100 without Limit)
+async function fetchAllMBSales(mbToken, startISO, endISO) {
+  let all = [];
+  for (let offset = 0; offset < 2000; offset += 200) {
+    try {
+      const r = await fetchWithTimeout(
+        `${MB_BASE}/sale/sales?StartSaleDateTime=${startISO}&EndSaleDateTime=${endISO}&Limit=200&Offset=${offset}`,
+        { headers: mbHeaders(mbToken) }, 15000
+      );
+      const data = await r.json();
+      if (data.Error || data.errors) break;
+      const batch = data.Sales || [];
+      all = all.concat(batch);
+      if (batch.length < 200) break; // last page
+    } catch (e) {
+      console.log(`[sales] Pagination error at offset ${offset}:`, e.message);
+      break;
+    }
+  }
+  return all;
+}
+
 // ─── Analytics API endpoints ──────────────────────────────────────────────────
 app.get('/api/analytics/overview', requireAuth, async (req, res) => {
   const reqStart = Date.now();
@@ -1452,21 +1474,19 @@ app.get('/api/analytics/overview', requireAuth, async (req, res) => {
       }
     };
 
-    const [allClients, currClassesData, currSalesData, prevClassesData, prevSalesData, membershipData] = await Promise.all([
+    const [allClients, currClassesData, currSales, prevClassesData, prevSales, membershipData] = await Promise.all([
       fetchAllMBClients(mbToken).catch(e => { console.log('[analytics] clients failed:', e.message); return []; }),
       safeFetch(`${MB_BASE}/class/classes?StartDateTime=${startISO}&EndDateTime=${endISO}&Limit=200`, 'currClasses'),
-      safeFetch(`${MB_BASE}/sale/sales?StartSaleDateTime=${startISO}&EndSaleDateTime=${endISO}`, 'currSales'),
+      fetchAllMBSales(mbToken, startISO, endISO).catch(e => { console.log('[analytics] currSales failed:', e.message); return []; }),
       safeFetch(`${MB_BASE}/class/classes?StartDateTime=${prevStartISO}&EndDateTime=${prevEndISO}&Limit=200`, 'prevClasses'),
-      safeFetch(`${MB_BASE}/sale/sales?StartSaleDateTime=${prevStartISO}&EndSaleDateTime=${prevEndISO}`, 'prevSales'),
+      fetchAllMBSales(mbToken, prevStartISO, prevEndISO).catch(e => { console.log('[analytics] prevSales failed:', e.message); return []; }),
       // Note: clientservices and activeclientmemberships both require a ClientId
       // For site-wide membership stats, use sale/contracts instead
       safeFetch(`${MB_BASE}/sale/contracts?Limit=200`, 'contracts'),
     ]);
 
     const currClasses = (currClassesData.Classes || []).filter(c => !c.IsCanceled);
-    const currSales = currSalesData.Sales || [];
     const prevClasses = (prevClassesData.Classes || []).filter(c => !c.IsCanceled);
-    const prevSales = prevSalesData.Sales || [];
     // Contracts from sale/contracts endpoint — represents memberships/recurring plans
     const contracts = membershipData.Contracts || [];
 
