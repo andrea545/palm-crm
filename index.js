@@ -2807,6 +2807,7 @@ app.get('/api/kitchen/overview', requireAuth, async (req, res) => {
       topItems,
       // Trend data
       dailyRevenue,
+      weeklyRevenue: dailyRevenue,
       // Heatmap
       hourlyHeatmap,
       // Customer insights

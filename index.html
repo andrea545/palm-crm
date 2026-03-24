@@ -2920,6 +2920,7 @@ function getDemoKitchen() {
       {name:'Avocado Toast',qty:Math.round(128*m),revenue:Math.round(1536*m),prevQty:Math.round(110*m),prevRevenue:Math.round(1320*m),qtyGrowth:16,revGrowth:16},
     ],
     dailyRevenue: Array.from({length:Math.min(14,kitPeriod==='1d'?24:7)}, (_,i) => ({label:kitPeriod==='1d'?(i<12?i+'am':i===12?'12pm':(i-12)+'pm'):['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i%7], amount:Math.round(350+Math.sin(i*0.5)*120), orders:Math.round(25+Math.random()*10)})),
+    get weeklyRevenue() { return this.dailyRevenue; },
     hourlyHeatmap: [],
     uniqueCustomers: Math.round(245*Math.min(m,2.5)), repeatCustomers: Math.round(78*Math.min(m,2)), repeatRate: 32,
     totalRevenue: Math.round(totalRevenue*0.93), avgOrderValue: 14.40,
@@ -3422,8 +3423,8 @@ function renderMaster(studio, kitchen) {
   renderMasterTrend(studio, kitchen, cur);
 
   // Studio revenue chart
-  const studioWeeks = studio.weeklyRevenue || buildWeeklyRevenue(studio);
-  const kitchenWeeks = kitchen.weeklyRevenue || [];
+  const studioWeeks = studio.weeklyRevenue || studio.dailyRevenue || buildWeeklyRevenue(studio);
+  const kitchenWeeks = kitchen.weeklyRevenue || kitchen.dailyRevenue || [];
   const maxSR = Math.max(...studioWeeks.map(w=>w.amount), 1);
   const maxKR = Math.max(...kitchenWeeks.map(w=>w.amount), 1);
 
