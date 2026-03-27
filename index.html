@@ -1625,7 +1625,10 @@ function renderChurnRisk(data) {
       <div style="font-size:10px;color:#7F1D1D;line-height:1.4;">
         ${(c.factors || []).join(' · ')}
       </div>
-      <div style="font-size:9px;color:#991B1B;margin-top:4px;font-style:italic;">${c.recommendedAction}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+        <div style="font-size:9px;color:#991B1B;font-style:italic;">${c.recommendedAction}</div>
+        ${c.email ? `<button onclick="nav('email',document.querySelectorAll('.ni')[5]);setTimeout(()=>{const s=document.getElementById('em-subject');if(s)s.value='We miss you at Palm Sporting Club';const t=document.getElementById('em-to');if(t)t.value='${c.email}'},300)" style="font-size:9px;padding:3px 8px;background:#0D3D20;color:#fff;border:none;border-radius:4px;cursor:pointer;">Send email</button>` : ''}
+      </div>
     </div>
   `).join('');
 
@@ -1650,7 +1653,7 @@ function renderFirstVisitConversion(data) {
       <div style="font-size:18px;font-weight:700;color:#111827;">${r30.totalFirstTime || 0}</div>
     </div>
     <div style="padding:10px;background:#DCFCE7;border-radius:8px;">
-      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Returned (48h)</div>
+      <div style="font-size:9px;color:#166534;text-transform:uppercase;letter-spacing:.5px;">Purchased (30d)</div>
       <div style="font-size:18px;font-weight:700;color:#111827;">${r30.convertedCount || 0}</div>
     </div>
     <div style="padding:10px;background:#F0FDF4;border-radius:8px;">
@@ -1662,8 +1665,11 @@ function renderFirstVisitConversion(data) {
   const alerts = (data.alertList || []).slice(0, 5);
   alertEl.innerHTML = alerts.map(c => `
     <div style="padding:10px;background:#FEF9E7;border-radius:8px;border-left:3px solid #D97706;">
-      <div style="font-size:12px;font-weight:600;color:#111827;">${c.FirstName || 'Unknown'} ${c.LastName || ''}</div>
-      <div style="font-size:10px;color:#78350F;margin-top:4px;">First visit but no second visit within 48h — send welcome follow-up</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:12px;font-weight:600;color:#111827;">${c.FirstName || 'Unknown'} ${c.LastName || ''}</div>
+        ${c.Email ? `<button onclick="nav('email',document.querySelectorAll('.ni')[5]);setTimeout(()=>{const s=document.getElementById('em-subject');if(s)s.value='Welcome to Palm Sporting Club!';const t=document.getElementById('em-to');if(t)t.value='${c.Email}'},300)" style="font-size:9px;padding:3px 8px;background:#D97706;color:#fff;border:none;border-radius:4px;cursor:pointer;">Send welcome</button>` : ''}
+      </div>
+      <div style="font-size:10px;color:#78350F;margin-top:4px;">Signed up but hasn't purchased yet — send welcome follow-up</div>
     </div>
   `).join('');
 
@@ -2097,10 +2103,30 @@ function renderRecommendations(d) {
   } else {
     recs.push({ icon:'&#128161;', color:'#FEF3C7', title:'Improve retention with check-ins', desc:'Retention is below 80%. Try adding a personal check-in message after a client\'s 5th class, and a "we miss you" offer at 14 days absent.', priority:'High' });
   }
-  // Instructor
-  recs.push({ icon:'&#127881;', color:'#F0FDF4', title:'Rotate popular instructors across time slots', desc:'Your top instructors have consistently high bookings. Consider scheduling them across multiple time slots to distribute demand and grow overall revenue.', priority:'Growth' });
-  // Weekend utilization
-  recs.push({ icon:'&#128197;', color:'#DBEAFE', title:'Saturday & Sunday fill rates are strong', desc:'Weekend classes consistently hit 85%+ capacity. Consider adding an extra afternoon slot or premium \"signature class\" to capture overflow demand.', priority:'Growth' });
+  // Instructor — data-driven
+  const topInstructor = (d.instructorStats || [])[0];
+  if (topInstructor && topInstructor.bookings > 20) {
+    recs.push({ icon:'&#127881;', color:'#F0FDF4', title:`${topInstructor.name} is your top performer`, desc:`${topInstructor.name} has ${topInstructor.bookings} bookings this period. Consider scheduling them in more time slots to capture unmet demand.`, priority:'Growth' });
+  }
+  // Weekend utilization — data-driven from heatmap
+  const heatmap = d.hourlyHeatmap || [];
+  const weekendBookings = heatmap.filter(h => h.day === 'Sat' || h.day === 'Sun' || h.day === 0 || h.day === 6).reduce((s,h) => s + (h.count || h.bookings || 0), 0);
+  const weekdayBookings = heatmap.filter(h => h.day !== 'Sat' && h.day !== 'Sun' && h.day !== 0 && h.day !== 6).reduce((s,h) => s + (h.count || h.bookings || 0), 0);
+  if (weekendBookings > 0 && weekdayBookings > 0) {
+    const wkndPct = Math.round(weekendBookings / (weekendBookings + weekdayBookings) * 100);
+    if (wkndPct > 25) {
+      recs.push({ icon:'&#128197;', color:'#DBEAFE', title:`Weekend demand is strong (${wkndPct}% of bookings)`, desc:'Consider adding an extra weekend session or premium class to capture overflow demand.', priority:'Growth' });
+    } else {
+      recs.push({ icon:'&#128197;', color:'#FEF3C7', title:`Weekend utilisation is low (${wkndPct}% of bookings)`, desc:'Consider running weekend promotions or Instagram Stories to drive Saturday/Sunday class attendance.', priority:'High' });
+    }
+  }
+  // Conversion — if data exists
+  if (d.newClients > 0) {
+    const convRate = d.conversionRate || 0;
+    if (convRate < 50) {
+      recs.push({ icon:'&#128176;', color:'#FEE2E2', title:`Only ${convRate}% of new signups purchase`, desc:'Your new-client conversion is below 50%. Review your welcome email, intro offer pricing, and first-class experience to reduce drop-off.', priority:'Urgent' });
+    }
+  }
 
   const priorityColors = { 'Urgent':'b-r','High':'b-a','Tip':'b-g','Growth':'b-b','Ongoing':'b-b' };
   $('an-recommendations').innerHTML = recs.map(r => `

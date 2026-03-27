@@ -1935,13 +1935,8 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     const sixMonthsAgo = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
 
-    // Fetch recent sales for activity tracking
-    const salesRes = await fetchWithTimeout(
-      `${MB_BASE}/sale/sales?StartSaleDateTime=${sixMonthsAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
-      { headers: mbHeaders(mbToken) }, 15000
-    ).catch(() => null);
-    const salesData = salesRes ? await salesRes.json() : {};
-    const recentSales = salesData.Sales || [];
+    // Fetch recent sales for activity tracking (paginated to get all)
+    const recentSales = await fetchAllMBSales(mbToken, sixMonthsAgo.toISOString(), now.toISOString());
 
     // Build last-activity map from sales
     const clientLastActivity = {};
@@ -1967,13 +1962,20 @@ app.get('/api/analytics/retention', requireAuth, async (req, res) => {
       return lastAct && lastAct >= ninetyDaysAgo;
     });
     const totalClients = allClients.length;
-    const retentionRate = totalClients > 0 ? Math.round((activeClients.length / totalClients) * 100) : 0;
 
     // Churned = was active in last 6 months but NOT in last 90 days
     const churned = allClients.filter(c => {
       const lastAct = getLastActivity(c);
       return lastAct && lastAct >= sixMonthsAgo && lastAct < ninetyDaysAgo;
     });
+
+    // Retention = active clients / clients active in last 6 months (relevant pool)
+    // Using all 3500+ clients as denominator inflates the denominator with years-old inactive clients
+    const relevantPool = allClients.filter(c => {
+      const lastAct = getLastActivity(c);
+      return lastAct && lastAct >= sixMonthsAgo;
+    });
+    const retentionRate = relevantPool.length > 0 ? Math.round((activeClients.length / relevantPool.length) * 100) : 0;
 
     // New clients in period
     const newClientsInPeriod = allClients.filter(c => {
@@ -2016,13 +2018,8 @@ app.get('/api/analytics/clv', requireAuth, async (req, res) => {
     const now = new Date();
     const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
 
-    // Fetch sales with date range (required by MB API)
-    const salesRes = await fetchWithTimeout(
-      `${MB_BASE}/sale/sales?StartSaleDateTime=${oneYearAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
-      { headers: mbHeaders(mbToken) }, 15000
-    ).catch(() => null);
-    const salesData = salesRes ? await salesRes.json() : {};
-    const allSales = salesData.Sales || [];
+    // Fetch sales with date range (paginated to get all)
+    const allSales = await fetchAllMBSales(mbToken, oneYearAgo.toISOString(), now.toISOString());
 
     // Reuse the getSaleTotal from analytics overview
     const getSaleTotal = (sale) => {
@@ -2039,7 +2036,7 @@ app.get('/api/analytics/clv', requireAuth, async (req, res) => {
       clvByClient[clientId] = {
         id: clientId,
         name: (client.FirstName || '') + ' ' + (client.LastName || ''),
-        createdAt: client.CreatedDateTime ? new Date(client.CreatedDateTime) : now,
+        createdAt: (client.CreationDate || client.CreatedDateTime) ? new Date(client.CreationDate || client.CreatedDateTime) : now,
         totalRevenue: 0, salesCount: 0,
       };
     }
@@ -2104,13 +2101,8 @@ app.get('/api/analytics/cohorts', requireAuth, async (req, res) => {
     const now = new Date();
     const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
 
-    // Fetch 12 months of sales as activity proxy
-    const salesRes = await fetchWithTimeout(
-      `${MB_BASE}/sale/sales?StartSaleDateTime=${oneYearAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
-      { headers: mbHeaders(mbToken) }, 15000
-    ).catch(() => null);
-    const salesData = salesRes ? await salesRes.json() : {};
-    const allSales = salesData.Sales || [];
+    // Fetch 12 months of sales as activity proxy (paginated to get all)
+    const allSales = await fetchAllMBSales(mbToken, oneYearAgo.toISOString(), now.toISOString());
 
     // Map: clientID → set of YYYY-MM months they had a sale
     const clientActivityMonths = {};
@@ -2127,7 +2119,7 @@ app.get('/api/analytics/cohorts', requireAuth, async (req, res) => {
     // Group clients by creation month (cohort)
     const cohorts = {};
     for (const client of allClients) {
-      const createdDate = client.CreatedDateTime ? new Date(client.CreatedDateTime) : null;
+      const createdDate = (client.CreationDate || client.CreatedDateTime) ? new Date(client.CreationDate || client.CreatedDateTime) : null;
       if (!createdDate) continue;
       const cohortKey = createdDate.getFullYear() + '-' + String(createdDate.getMonth() + 1).padStart(2, '0');
       if (!cohorts[cohortKey]) cohorts[cohortKey] = [];
@@ -2183,15 +2175,8 @@ app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
-    // Fetch recent sales for activity tracking
-    // Note: client/clientservices requires a clientId and cannot be bulk-fetched,
-    // so we score churn risk based on sales activity patterns only
-    const salesRes = await fetchWithTimeout(
-      `${MB_BASE}/sale/sales?StartSaleDateTime=${sixtyDaysAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
-      { headers: mbHeaders(mbToken) }, 15000
-    ).catch(() => null);
-    const salesData = salesRes ? await salesRes.json() : {};
-    const recentSales = salesData.Sales || [];
+    // Fetch recent sales for activity tracking (paginated to get all)
+    const recentSales = await fetchAllMBSales(mbToken, sixtyDaysAgo.toISOString(), now.toISOString());
 
     // Build recent activity map from sales
     const clientSales = {};
@@ -2205,15 +2190,17 @@ app.get('/api/analytics/churn-risk', requireAuth, async (req, res) => {
     const riskScores = [];
     for (const client of allClients) {
       const cid = client.Id || client.ID || client.ClientId;
-      const createdAt = client.CreatedDateTime ? new Date(client.CreatedDateTime) : null;
+      const createdAt = (client.CreationDate || client.CreatedDateTime) ? new Date(client.CreationDate || client.CreatedDateTime) : null;
       if (!createdAt) continue;
 
       // Skip clients created less than 2 weeks ago (too new)
       if ((now - createdAt) < 14 * 24 * 60 * 60 * 1000) continue;
 
-      const lastVisitDate = client.LastFormula ? new Date(client.LastFormula) : null;
-      const lastModified = client.LastModifiedDateTime ? new Date(client.LastModifiedDateTime) : null;
-      const lastActivity = lastVisitDate || lastModified || createdAt;
+      // Use sales data first (most reliable), then LastVisitDateTime, then creation date
+      const salesDates = clientSales[cid] || [];
+      const lastSaleDate = salesDates.length > 0 ? new Date(Math.max(...salesDates.map(d => d.getTime()))) : null;
+      const lastVisitDate = client.LastVisitDateTime ? new Date(client.LastVisitDateTime) : null;
+      const lastActivity = lastSaleDate || lastVisitDate || createdAt;
       const daysSinceLastActivity = Math.floor((now - lastActivity) / (1000 * 60 * 60 * 24));
 
       // Days since last activity risk (30% weight)
@@ -2277,13 +2264,8 @@ app.get('/api/analytics/first-visit-conversion', requireAuth, async (req, res) =
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
-    // Fetch sales to detect who purchased (= converted)
-    const salesRes = await fetchWithTimeout(
-      `${MB_BASE}/sale/sales?StartSaleDateTime=${ninetyDaysAgo.toISOString()}&EndSaleDateTime=${now.toISOString()}&Limit=200`,
-      { headers: mbHeaders(mbToken) }, 15000
-    ).catch(() => null);
-    const salesData = salesRes ? await salesRes.json() : {};
-    const sales = salesData.Sales || [];
+    // Fetch sales to detect who purchased (paginated to get all)
+    const sales = await fetchAllMBSales(mbToken, ninetyDaysAgo.toISOString(), now.toISOString());
 
     // Set of client IDs who made a purchase
     const purchasedClients = new Set();
@@ -2302,7 +2284,7 @@ app.get('/api/analytics/first-visit-conversion', requireAuth, async (req, res) =
     for (const w of windows) {
       // New clients created within window
       const newClients = allClients.filter(c => {
-        const created = c.CreatedDateTime ? new Date(c.CreatedDateTime) : null;
+        const created = (c.CreationDate || c.CreatedDateTime) ? new Date(c.CreationDate || c.CreatedDateTime) : null;
         return created && created >= w.since;
       });
 
