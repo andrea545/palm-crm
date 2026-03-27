@@ -324,6 +324,12 @@ function saveEmailLog() {
 
 // ─── Email sending via SendGrid ───────────────────────────────────────────────
 async function sendEmail({ to, toName, subject, html, category, trigger }) {
+  // Block emails to ClassPass proxy addresses — they always bounce
+  if (to && to.toLowerCase().endsWith('@members.classpass.com')) {
+    console.log(`[email] Skipped ClassPass proxy address: ${to}`);
+    return { ok: true, skipped: true, reason: 'ClassPass proxy email' };
+  }
+
   const logEntry = {
     id: crypto.randomUUID(),
     to, toName: toName || '',
